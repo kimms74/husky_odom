@@ -92,6 +92,22 @@ def get_wheel_estimates(path_results,dataset_name):
 
     return Rot_wheel, ang_wheel, v_wheel , p_wheel, t_wheel
 
+def get_joint_imu_estimates(path_results,dataset_name):
+    #  Obtain  estimates
+    file_name = os.path.join(path_results+"/", dataset_name + "_joint_imu.p")
+    if not os.path.exists(file_name):
+        print('No result for ' + dataset_name)
+        return
+
+    mondict_wheel = load(file_name)
+    Rot_joint_imu = mondict_wheel['Rot_joint_imu']
+    ang_joint_imu = mondict_wheel['ang_joint_imu']
+    v_joint_imu = mondict_wheel['v_joint_imu']
+    t_joint_imu = mondict_wheel['t_joint_imu']
+    p_joint_imu = mondict_wheel['p_joint_imu']
+
+    return Rot_joint_imu, ang_joint_imu, v_joint_imu , p_joint_imu, t_joint_imu
+
 def get_gt_data(path_data_save,dataset_name):
     file_name = os.path.join(path_data_save+"/", dataset_name + "_gt.p")
     if not os.path.exists(file_name):
@@ -116,6 +132,8 @@ def results_plot(path_data_save, path_results, dataset_name):
 
     Rot_wheel, ang_wheel, v_wheel, p_wheel , t_wheel = get_wheel_estimates(path_results,dataset_name)
 
+    Rot_joint_imu, ang_joint_imu, v_joint_imu , p_joint_imu, t_joint_imu = get_joint_imu_estimates(path_results,dataset_name)
+
     t_gt, Rot_gt, ang_gt, p_gt, v_gt = get_gt_data(path_data_save,dataset_name)
 
     v_r_gt = np.zeros((len(v_gt),3))
@@ -137,9 +155,9 @@ def results_plot(path_data_save, path_results, dataset_name):
     # print(dataset_name+" rot gt: " ,ang_gt[-1,2], " rot imu: ", ang_imu[-2,2])
     # print(dataset_name+" rot error: " ,rot_error)
 
-    p_error = p_gt[-1,:2] - p_wheel[-1,:2]
-    print(dataset_name+" p gt: " ,p_gt[-1,:2], " p wheel: ", p_wheel[-1,:2])
-    print(dataset_name+" p error: " ,p_error)
+    # p_error = p_gt[-1,:2] - p_wheel[-1,:2]
+    # print(dataset_name+" p gt: " ,p_gt[-1,:2], " p wheel: ", p_wheel[-1,:2])
+    # print(dataset_name+" p error: " ,p_error)
 
     # ax1 = plt.figure().add_subplot(figsize=(20, 10))
     # x, y, z = np.meshgrid(p_gt[:,0],
@@ -156,7 +174,8 @@ def results_plot(path_data_save, path_results, dataset_name):
     # fig1, ax1 = plt.subplots(sharex=True, figsize=(20, 10))
 
     # ax1.plot(t_gt, v_gt[:,:2])
-    # ax1.plot(t_imu, v_imu[:,:2])
+    # ax1.plot(t_joint_imu, v_joint_imu[:,:2])
+    # # ax1.plot(t_imu, v_imu[:,:2])
     # # ax1.plot(t_wheel, v_wheel[:,:2])
 
     # ax1.set(xlabel='time (s)', ylabel='$\mathbf{v}_n$ (m/s)', title="Velocity")
@@ -165,7 +184,8 @@ def results_plot(path_data_save, path_results, dataset_name):
 
 
     # ax1.legend(
-    #     ['$gt^x$', '$gt^y$', '$imu^x$', '$imu^y$'])
+    #     ['$gt^x$', '$gt^y$', '$joint imu^x$', '$joint imu^y$'])
+    #     # ['$gt^x$', '$gt^y$', '$imu^x$', '$imu^y$'])
     #     # ['$mocap^x$', '$mocap^y$', '$imu^x$', '$imu^y$', '$wheel^x$', '$wheel^y$'])
 
 
@@ -232,21 +252,23 @@ def results_plot(path_data_save, path_results, dataset_name):
 
 
 
-    # # position in plan
-    # fig3, ax3 = plt.subplots(figsize=(20, 10))
+    # position in plan
+    fig3, ax3 = plt.subplots(figsize=(20, 10))
 
-    # ax3.plot(p_gt[:, 0], p_gt[:, 1])
-    # # ax3.plot(p_imu[:, 0], p_imu[:, 1])
+    ax3.plot(p_gt[:, 0], p_gt[:, 1])
+    ax3.plot(p_joint_imu[:, 0], p_joint_imu[:, 1])
+    # ax3.plot(p_imu[:, 0], p_imu[:, 1])
     # ax3.plot(p_wheel[:, 0], p_wheel[:, 1])
-    # ax3.axis('equal')
+    ax3.axis('equal')
 
-    # ax3.set(xlabel=r'$p_n^x$ (m)', ylabel=r'$p_n^y$ (m)', title="Position on $xy$")
+    ax3.set(xlabel=r'$p_n^x$ (m)', ylabel=r'$p_n^y$ (m)', title="Position on $xy$")
 
-    # ax3.grid()
+    ax3.grid()
 
+    ax3.legend(['gt', 'joint_imu'])
     # ax3.legend(['gt', 'wheel'])
-    # # ax3.legend(['gt', 'imu', 'wheel'])
-    # # ax3.legend(['gt'])
+    # ax3.legend(['gt', 'imu', 'wheel'])
+    # ax3.legend(['gt'])
 
 
     # # acc in plan
