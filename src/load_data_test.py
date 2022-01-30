@@ -236,9 +236,9 @@ def interp_data(t_x, x, t):
 
 if __name__ == '__main__':
     # datasets = ["square_ccw","square_cw","circle_ccw","circle_cw","ribbon","inf","random_1","random_2"]
-    datasets = ['random_2', 'circle_ccw']
+    datasets = ['test']
     for dataset_name in datasets:
-        path_data_base = "../../../Datasets/husky_dataset/211207/"+dataset_name +"/"
+        path_data_base = "../test_dataset/220128/"+dataset_name +"/"
         path_data_save = "../data"
         path_results = "../results"
 
@@ -250,9 +250,9 @@ if __name__ == '__main__':
                 gt_data = gt_csv.to_numpy()
 
                 gt_front_left = gt_data[:,1:4]/1e3
-                gt_front_right = gt_data[:,4:7]/1e3
-                gt_back_left = gt_data[:,7:10]/1e3
-                gt_back_right = gt_data[:,10:13]/1e3
+                gt_back_left = gt_data[:,4:7]/1e3
+                gt_back_right = gt_data[:,7:10]/1e3
+                gt_front_right = gt_data[:,10:13]/1e3
 
                 p_gt_temp = np.zeros((len(gt_back_left),3))
                 p_gt = np.zeros((len(gt_back_left),3))
@@ -314,8 +314,8 @@ if __name__ == '__main__':
                 ang_gt[:, 1] = pitch_gt
                 ang_gt[:, 2] = yaw_gt
 
-            elif (date_dir == dataset_name+"_imu.csv"):
-                    path1 = os.path.join(path1, date_dir)
+            elif (date_dir == dataset_name+"-imu-data.csv"):
+                    path1 = os.path.join(path_data_base, date_dir)
                     imu_csv = pd.read_csv(path1,sep=",")
                     imu_data = imu_csv.to_numpy()
 

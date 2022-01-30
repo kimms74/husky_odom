@@ -5,7 +5,6 @@ import numpy as np
 from itertools import chain
 from utils import *
 import pickle
-import torch
 
 def from_rpy(roll, pitch, yaw):
     return rotz(yaw).dot(roty(pitch).dot(rotx(roll)))
@@ -61,7 +60,7 @@ def get_imu_estimates(path_results,dataset_name):
     #  Obtain  estimates
     file_name = os.path.join(path_results+"/", dataset_name + "_imu.p")
     if not os.path.exists(file_name):
-        print('No result for ' + dataset_name)
+        print('No result for imu ' + dataset_name)
         return
 
     mondict_imu = load(file_name)
@@ -80,7 +79,7 @@ def get_wheel_estimates(path_results,dataset_name):
     #  Obtain  estimates
     file_name = os.path.join(path_results+"/", dataset_name + "_wheel.p")
     if not os.path.exists(file_name):
-        print('No result for ' + dataset_name)
+        print('No result for wheel ' + dataset_name)
         return
 
     mondict_wheel = load(file_name)
@@ -96,7 +95,7 @@ def get_joint_imu_estimates(path_results,dataset_name):
     #  Obtain  estimates
     file_name = os.path.join(path_results+"/", dataset_name + "_joint_imu.p")
     if not os.path.exists(file_name):
-        print('No result for ' + dataset_name)
+        print('No result for joint imu ' + dataset_name)
         return
 
     mondict_wheel = load(file_name)
@@ -111,7 +110,7 @@ def get_joint_imu_estimates(path_results,dataset_name):
 def get_gt_data(path_data_save,dataset_name):
     file_name = os.path.join(path_data_save+"/", dataset_name + "_gt.p")
     if not os.path.exists(file_name):
-        print('No result for ' + dataset_name)
+        print('No result for gt ' + dataset_name)
         return
 
     mondict_gt = load(file_name)
@@ -120,9 +119,11 @@ def get_gt_data(path_data_save,dataset_name):
 
 def results_plot(path_data_save, path_results, dataset_name):
     plt.close('all')
-    file_name = os.path.join(path_results+"/", dataset_name + "_imu.p")
+    file_name = os.path.join(path_data_save+"/", dataset_name + "_gt.p")
+    print(file_name)
+
     if not os.path.exists(file_name):
-        print('No result for ' + dataset_name)
+        print('No result for all ' + dataset_name)
         return
 
     print("\nResults for: " + dataset_name)
@@ -174,9 +175,9 @@ def results_plot(path_data_save, path_results, dataset_name):
     fig1, ax1 = plt.subplots(sharex=True, figsize=(20, 10))
 
     ax1.plot(t_gt, v_gt[:,:2])
-    ax1.plot(t_joint_imu, v_joint_imu[:,:2])
+    # ax1.plot(t_joint_imu, v_joint_imu[:,:2])
     # ax1.plot(t_imu, v_imu[:,:2])
-    # ax1.plot(t_wheel, v_wheel[:,:2])
+    ax1.plot(t_wheel, v_wheel[:,:2])
 
     ax1.set(xlabel='time (s)', ylabel='$\mathbf{v}_n$ (m/s)', title="Velocity")
     
@@ -236,8 +237,8 @@ def results_plot(path_data_save, path_results, dataset_name):
     # ax2.plot(t_gt, ang_gt[:,2])
     # ax2.plot(t_imu, ang_imu[:,2])
     ax2.plot(t_gt, ang_gt[:,2])
-    ax2.plot(t_imu, ang_imu[:,2])
-    # ax2.plot(t_wheel, ang_wheel[:,2])
+    # ax2.plot(t_imu, ang_imu[:,2])
+    ax2.plot(t_wheel, ang_wheel[:,2])
     ax2.plot(t_gt, pi_up, 'k',linestyle='--')
     ax2.plot(t_gt, pi_down, 'k',linestyle='--')
 
@@ -256,9 +257,9 @@ def results_plot(path_data_save, path_results, dataset_name):
     fig3, ax3 = plt.subplots(figsize=(20, 10))
 
     ax3.plot(p_gt[:, 0], p_gt[:, 1])
-    ax3.plot(p_joint_imu[:, 0], p_joint_imu[:, 1])
+    # ax3.plot(p_joint_imu[:, 0], p_joint_imu[:, 1])
     # ax3.plot(p_imu[:, 0], p_imu[:, 1])
-    # ax3.plot(p_wheel[:, 0], p_wheel[:, 1])
+    ax3.plot(p_wheel[:, 0], p_wheel[:, 1])
     ax3.axis('equal')
 
     ax3.set(xlabel=r'$p_n^x$ (m)', ylabel=r'$p_n^y$ (m)', title="Position on $xy$")
