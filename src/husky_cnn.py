@@ -11,7 +11,8 @@ import torch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 
-from model_temporal import LSTMSeqNetwork, BilinearLSTMSeqNetwork
+
+from model_lstm import LSTMSeqNetwork, BilinearLSTMSeqNetwork
 from utils import load_config, MSEAverageMeter
 from dataset_HUSKY import *
 from metric import compute_absolute_trajectory_error, compute_relative_trajectory_error
@@ -23,13 +24,10 @@ Configurations
         LSTM_simple - type=lstm, lstm_bilinear        
 '''
 
-torch.multiprocessing.set_sharing_strategy('file_system')
-_nano_to_sec = 1e09
 _input_channel, _output_channel = 7, 5 # nonholonomic_velocity, w_imu, acc_imu (1,3,3); 2d_v_loc_gt, ang_vel_gt (2,3)
 # _input_channel, _output_channel = 8, 5 # holonomic_velocity, w_imu, acc_imu (2,3,3); 2d_v_loc_gt, ang_vel_gt (2,3)
-_fc_config = {'fc_dim': 512, 'in_dim': 7, 'dropout': 0.5, 'trans_planes': 128}
-
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
 
 class TripleLoss(torch.nn.Module):
     def __init__(self, dt):
@@ -39,30 +37,26 @@ class TripleLoss(torch.nn.Module):
         self.dt = dt
 
     def forward(self, pred, targ): # pred: 2d_v_loc, ang_vel (2,3), targ: 2d_v_loc, dRot (2,9)
-
-        ### predicts
         # learning data
         pred_loc_v_temp = pred[:,:,:2].reshape(-1,2).double()
         pred_loc_v = torch.zeros(pred_loc_v_temp.size(0),3).double().to(device)
         pred_loc_v[:,:2] = pred_loc_v_temp
         pred_w = pred[:,:,2:].reshape(-1,3).double()
-        
+
+
+
         # #for feat data plot test
         # pred_loc_v_temp = pred[:,:,0].reshape(-1).double()
         # pred_loc_v = torch.zeros(pred_loc_v_temp.size(0),3).double().to(device)
         # pred_loc_v[:,0] = pred_loc_v_temp
         # pred_w = pred[:,:,1:4].reshape(-1,3).double()
 
-        ### targets
         targ_loc_v_temp = targ[:,:,:2].reshape(-1,2).double()
         targ_loc_v = torch.zeros(targ_loc_v_temp.size(0),3).double().to(device)
         targ_loc_v[:,:2] = targ_loc_v_temp
-        ## targ dRot_gt
         targ_dRot = targ[:,:,2:11].reshape(-1,3,3).double()
-        targ_Rot = targ[:,:,11:20].reshape(-1,3,3).double()
-        # targ_w = SO3.log(targ_dRot)/self.dt
-        ## targ w_gt
-        # targ_w = targ[:,:,2:5].reshape(-1,3).double()
+        targ_w = SO3.log(targ_dRot)/self.dt
+
 
         # targ_Rot = torch.zeros_like(targ_dRot).double().to(device).double()
         # targ_Rot[0] = targ_dRot[0]
@@ -75,23 +69,9 @@ class TripleLoss(torch.nn.Module):
         # 1.local vel loss
         # loc_vel_loss = torch.mean(self.mse_loss(pred_loc_v[:,:2],targ_loc_v[:,:2]))
         # loc_vel_loss = torch.sum(self.mse_loss(pred_loc_v[:,:2],targ_loc_v[:,:2]))
-        # loc_vel_loss = torch.sum(self.huber_loss(pred_loc_v[:,:2],targ_loc_v[:,:2]))*10
-        pred_dp = bmv(targ_Rot, pred_loc_v*self.dt)
-        # pred_p = torch.cumsum(pred_dp[:,:2],0)
-        targ_dp = bmv(targ_Rot, targ_loc_v*self.dt)
-        # targ_p = torch.cumsum(targ_dp[:,:2],0)
-        # pos_loss = torch.sum(self.huber_loss(pred_p[:,:2],targ_p[:,:2]))
-        # pos_loss = torch.sum(self.huber_loss(pred_dp[:,:2],targ_dp[:,:2]))*10000
-        pos_loss = 0
-        pos_N = 4
-        for k in range(pos_N):
-            pred_dp = pred_dp[::2] + pred_dp[1::2]
-            targ_dp = targ_dp[::2] + targ_dp[1::2]
-
-            pos_loss += torch.sum(self.huber_loss(pred_dp[:,:2],targ_dp[:,:2]))*10000
-
+        
         # 2.rot loss
-        # pred_dRot = SO3.exp(self.dt*pred_w).double()
+        pred_dRot = SO3.exp(self.dt*pred_w).double()
         # pred_Rot = torch.zeros_like(pred_dRot).double().to(device).double()
         # pred_Rot[0] = pred_dRot[0]
         # for i in range(1,pred_Rot.size(0)):
@@ -101,7 +81,8 @@ class TripleLoss(torch.nn.Module):
         # error_theta = SO3.log(bmtm(pred_Rot,targ_Rot))
 
         # theta_loss = 0
-        # min_N = 5
+        # # min_N = 6
+        # min_N = 4
         # for k in range(min_N):
         #     pred_dRot = pred_dRot[::2].bmm(pred_dRot[1::2])
         #     targ_dRot = targ_dRot[::2].bmm(targ_dRot[1::2])
@@ -111,7 +92,7 @@ class TripleLoss(torch.nn.Module):
         #     zero_theta = torch.zeros_like(error_theta).double().to(device)
 
         #     # theta_loss += torch.sum(self.mse_loss(error_theta, zero_theta))
-        #     theta_loss += torch.sum(self.huber_loss(error_theta, zero_theta))*4100
+        #     theta_loss += torch.sum(self.huber_loss(error_theta, zero_theta))
 
         # min_N = 2
         # for k in range(min_N):
@@ -124,7 +105,7 @@ class TripleLoss(torch.nn.Module):
 
         # theta_loss = torch.sum(self.mse_loss(error_theta, zero_theta))*30000        
         # theta_loss = torch.sum(self.mse_loss(pred_w, targ_w))
-        # theta_loss = torch.sum(self.huber_loss(pred_w, targ_w))
+        theta_loss = torch.sum(self.huber_loss(pred_w, targ_w))
 
 
         # # 3.position loss
@@ -193,11 +174,7 @@ class TripleLoss(torch.nn.Module):
         # plt.show(block=True)
 
         # loss = loc_vel_loss + theta_loss
-        # loss = loc_vel_loss + pos_loss
-        loss = pos_loss
-        # loss = loc_vel_loss
-        # loss = theta_loss
-        # loss = pos_loss + theta_loss
+        loss = theta_loss
         # loss = loc_vel_loss + theta_loss + pos_loss
         # loss = loc_vel_loss + theta_loss_r + theta_loss_p + theta_loss_y
         # print('vel loss: ',loc_vel_loss)
@@ -231,14 +208,14 @@ def get_dataset(path_data_base, path_data_save, data_list, mode, args):
     dt = 1/args.sensor_frequency
 
     data = HuskyData(path_data_base, path_data_save, data_list, mode, args.read_from_data, dt)
-    dataset = HUSKYLSTM(data, random_shift, shuffle, args)
+    dataset = HUSKYCNN(data, random_shift, shuffle, args)
 
     return dataset
 
 def get_model(args):
     config = {}
-    if args.dropout is not None:
-        config['dropout'] = args.dropout
+    # if args.dropout:
+    #     config['dropout'] = args.dropout
 
     if args.type == 'lstm_bi':
         print("Bilinear LSTM Network")
@@ -308,7 +285,7 @@ def train(args):
     criterion = get_loss_function(args)
 
     optimizer = torch.optim.Adam(network.parameters(), args.lr)
-    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=50, factor=0.75, verbose=True, eps=1e-12)
+    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=10, factor=0.75, verbose=True, eps=1e-12)
     quiet_mode = args.quiet
     use_scheduler = args.use_scheduler
 
@@ -389,7 +366,7 @@ def train(args):
                     best_val_loss = val_loss
                     saved_model = True
                     if args.path_results:
-                        model_path = osp.join(args.path_results, 'checkpoints', 'checkpoint_husky_lstm_%d.pt' % epoch)
+                        model_path = osp.join(args.path_results, 'checkpoints', 'checkpoint_husky_%d.pt' % epoch)
                         torch.save({'model_state_dict': network.state_dict(),
                                     'epoch': epoch,
                                     'loss': train_errs[epoch],
@@ -399,7 +376,7 @@ def train(args):
                     scheduler.step(val_loss)
 
             if args.path_results and not saved_model and (epoch + 1) % args.save_interval == 0:  # save even with validation
-                model_path = osp.join(args.path_results, 'checkpoints', 'icheckpoint_husky_lstm_%d.pt' % epoch)
+                model_path = osp.join(args.path_results, 'checkpoints', 'icheckpoint_husky_%d.pt' % epoch)
                 torch.save({'model_state_dict': network.state_dict(),
                             'epoch': epoch,
                             'loss': train_errs[epoch],
@@ -419,44 +396,30 @@ def train(args):
 
     print('Training completed')
     if args.path_results:
-        model_path = osp.join(args.path_results, 'checkpoints', 'checkpoint_husky_lstm_latest.pt')
+        model_path = osp.join(args.path_results, 'checkpoints', 'checkpoint_ROT_latest.pt')
         torch.save({'model_state_dict': network.state_dict(),
                     'epoch': epoch,
                     'optimizer_state_dict': optimizer.state_dict()}, model_path)
 
-def recon_traj_with_preds_global(dataset, preds, targs, seq_id, type, args):
-    dt = 1/args.sensor_frequency
-
+#################modify!!!!!!
+def recon_traj_with_preds_global(dataset, preds, seq_id, type, args):
     if type == 'gt':
-        pred_loc_v_temp = targs[:,:2]
-        pred_loc_v = torch.zeros(pred_loc_v_temp.size(0),3).float().to(device)
-        pred_loc_v[:,:2] = pred_loc_v_temp
-
-        pred_dRot = targs[:,2:11].reshape(-1,3,3).float().to(device)
-        w = SO3.log(pred_dRot)/dt
-        ori = torch.zeros_like(pred_dRot).float().to(device)
-        ori[0] = pred_dRot[0]
-        for i in range(1,pred_dRot.size(0)):
-            ori[i] = torch.mm(ori[i-1],pred_dRot[i])
-        rpy = SO3.to_rpy(ori)
-        pred_dp = bmv(ori,pred_loc_v*dt)
-        pos = torch.cumsum(pred_dp[:,:2],0)
-        veloc = targs[:,:2]
-
+        pos = dataset.gt_pos[seq_id][:, :2]
+        rpy = dataset.gt_rpy[seq_id]
+        veloc = preds[:,:2]
         t = dataset.gt_t[seq_id]
+        w = dataset.gt_w[seq_id]
 
 
     elif type == 'pred':
+        dt = 1/args.sensor_frequency
 
         pred_loc_v_temp = preds[:,:2]
-        # pred_loc_v_temp = targs[:,:2]
         pred_loc_v = torch.zeros(pred_loc_v_temp.size(0),3).float().to(device)
         pred_loc_v[:,:2] = pred_loc_v_temp
 
         w = preds[:,2:5]
-        # w = dataset.imu_w[seq_id].float().to(device)
         pred_dRot = SO3.exp(dt*w)
-        # pred_dRot = targs[:,2:11].reshape(-1,3,3).float().to(device)
         ori = torch.zeros_like(pred_dRot).float().to(device)
         ori[0] = pred_dRot[0]
         for i in range(1,pred_dRot.size(0)):
@@ -472,11 +435,33 @@ def recon_traj_with_preds_global(dataset, preds, targs, seq_id, type, args):
         rpy = dataset.ekf_rpy[seq_id]
         veloc = dataset.ekf_v_loc[seq_id]
         t = dataset.ekf_t[seq_id]
-        # w = torch.zeros_like(preds[:,2:5]).float().to(device)
-        w = dataset.imu_w[seq_id]
+        w = torch.zeros_like(preds[:,2:5]).float().to(device)
     
     return pos.cpu().detach().numpy(), rpy.cpu().detach().numpy(), veloc.cpu().detach().numpy(), t.cpu().detach().numpy(), w.cpu().detach().numpy()
 
+def recon_rpy_with_preds_global(dataset, preds, seq_id, type, args):
+    if type == 'gt':
+        rpy = dataset.gt_rpy[seq_id]
+        t = dataset.gt_t[seq_id]
+        w = dataset.gt_w[seq_id]
+
+    elif type == 'pred':
+        dt = 1/args.sensor_frequency
+
+        w = preds[:,:3]
+        pred_dRot = SO3.exp(dt*w)
+        ori = torch.zeros_like(pred_dRot).float().to(device)
+        ori[0] = pred_dRot[0]
+        for i in range(1,pred_dRot.size(0)):
+            ori[i] = torch.mm(ori[i-1],pred_dRot[i])
+        rpy = SO3.to_rpy(ori)
+        t = dataset.gt_t[seq_id]
+
+    elif type == 'ekf':
+        rpy = dataset.ekf_rpy[seq_id]
+        t = dataset.ekf_t[seq_id]
+
+    return rpy.cpu().detach().numpy(), t.cpu().detach().numpy()
 
 def test(args):
     global device, _output_channel
@@ -511,8 +496,7 @@ def test(args):
             f.write('Seq traj_len velocity ate rte\n')
 
 
-    ate_all_pred, rte_all_pred = [], []
-    ate_all_ekf, rte_all_ekf = [], []
+    ate_all, rte_all = [], []
     pred_per_min = args.sensor_frequency * 60
 
     seq_dataset = get_dataset(args.path_data_base, args.path_data_save, args.test_list, args.mode, args)
@@ -527,37 +511,39 @@ def test(args):
         # vel_losses = np.mean((targs - preds) ** 2, axis=0)
 
         print(data,' Reconstructing trajectory')
-        pos_pred, rpy_pred, vel_loc_pred, t_pred, w_pred = recon_traj_with_preds_global(seq_dataset, preds, targs, idx, 'pred', args)
-        pos_gt, rpy_gt, vel_loc_gt, t_gt, w_gt = recon_traj_with_preds_global(seq_dataset, preds, targs, idx, 'gt', args)
-        pos_ekf, rpy_ekf, vel_loc_ekf, t_ekf, w_ekf = recon_traj_with_preds_global(seq_dataset, preds, targs, idx, 'ekf', args)
+        # pos_pred, rpy_pred, vel_loc_pred, t_pred, w_pred = recon_traj_with_preds_global(seq_dataset, preds, idx, 'pred', args)
+        # pos_gt, rpy_gt, vel_loc_gt, t_gt, w_gt = recon_traj_with_preds_global(seq_dataset, targs, idx, 'gt', args)
+        # pos_ekf, rpy_ekf, vel_loc_ekf, t_ekf, w_ekf = recon_traj_with_preds_global(seq_dataset,targs, idx, 'ekf', args)
 
-        if args.path_results is not None and osp.isdir(args.path_results):
-            np.save(osp.join(args.path_results, '{}_{}.npy'.format(data, args.type)),
-                    np.concatenate([pos_pred, pos_gt], axis=1))
+        # if args.path_results is not None and osp.isdir(args.path_results):
+        #     np.save(osp.join(args.path_results, '{}_{}.npy'.format(data, args.type)),
+        #             np.concatenate([pos_pred, pos_gt], axis=1))
 
-        ate_pred = compute_absolute_trajectory_error(pos_pred, pos_gt)
-        ate_ekf = compute_absolute_trajectory_error(pos_ekf, pos_gt)
-        if pos_pred.shape[0] < pred_per_min:
-            ratio = pred_per_min / pos_pred.shape[0]
-            rte_pred = compute_relative_trajectory_error(pos_pred, pos_gt, delta=pos_pred.shape[0] - 1) * ratio
-            rte_ekf = compute_relative_trajectory_error(pos_ekf, pos_gt, delta=pos_ekf.shape[0] - 1) * ratio
-        else:
-            rte_pred = compute_relative_trajectory_error(pos_pred, pos_gt, delta=pred_per_min)
-            rte_ekf = compute_relative_trajectory_error(pos_ekf, pos_gt, delta=pred_per_min)
-        pos_cum_error = np.linalg.norm(pos_pred - pos_gt, axis=1)
+        # ate_pred = compute_absolute_trajectory_error(pos_pred, pos_gt)
+        # ate_ekf = compute_absolute_trajectory_error(pos_ekf, pos_gt)
+        # if pos_pred.shape[0] < pred_per_min:
+        #     ratio = pred_per_min / pos_pred.shape[0]
+        #     rte_pred = compute_relative_trajectory_error(pos_pred, pos_gt, delta=pos_pred.shape[0] - 1) * ratio
+        #     rte_ekf = compute_relative_trajectory_error(pos_ekf, pos_gt, delta=pos_ekf.shape[0] - 1) * ratio
+        # else:
+        #     rte_pred = compute_relative_trajectory_error(pos_pred, pos_gt, delta=pred_per_min)
+        #     rte_ekf = compute_relative_trajectory_error(pos_ekf, pos_gt, delta=pred_per_min)
+        # pos_cum_error = np.linalg.norm(pos_pred - pos_gt, axis=1)
+        # ate_all.append(ate_pred)
+        # rte_all.append(rte_pred)
 
-        ate_all_pred.append(ate_pred)
-        rte_all_pred.append(rte_pred)
-        ate_all_ekf.append(ate_ekf)
-        rte_all_ekf.append(rte_ekf)
+        # # print('Sequence {}, Velocity loss {} / {}, ATE: {}, RTE:{}'.format(data, vel_losses, np.mean(vel_losses), ate,
+        # #                                                                    rte))
+        # # log_line = format_string(data, np.mean(vel_losses), ate, rte)
 
-        # print('Sequence {}, Velocity loss {} / {}, ATE: {}, RTE:{}'.format(data, vel_losses, np.mean(vel_losses), ate,
-        #                                                                    rte))
-        # log_line = format_string(data, np.mean(vel_losses), ate, rte)
+        # print('Sequence {}, ATE_pred: {}, RTE_pred:{}'.format(data, ate_pred, rte_pred))
+        # # print('Sequence {}, ATE_ekf: {}, RTE_ekf:{}'.format(data, ate_ekf, rte_ekf))
+        # log_line = format_string(data, ate_pred, rte_pred)
 
-        print('Sequence {}, ATE_pred: {}, RTE_pred:{}'.format(data, ate_pred, rte_pred))
-        print('Sequence {}, ATE_ekf: {}, RTE_ekf:{}'.format(data, ate_ekf, rte_ekf))
-        log_line = format_string(data, ate_pred, rte_pred)
+        # rot test
+        rpy_pred, t_pred = recon_rpy_with_preds_global(seq_dataset, preds, idx, 'pred', args)
+        rpy_gt, t_gt = recon_rpy_with_preds_global(seq_dataset, targs, idx, 'gt', args)
+        rpy_ekf, t_ekf = recon_rpy_with_preds_global(seq_dataset, targs, idx, 'ekf', args)
 
         if not args.fast_test:
             kp = preds.shape[1]
@@ -588,7 +574,7 @@ def test(args):
             # ax3.plot(pos_pred[:, 0], pos_pred[:, 1])
             # ax3.plot(pos_ekf[:,0], pos_ekf[:,1])
 
-            # ax3.set(xlabel=r'$p_n^x$ (m)', ylabel=r'$p_n^y$ (m)', title="Position of husky")
+            # ax3.set(xlabel=r'$p_n^x$ (m)', ylabel=r'$p_n^y$ (m)', title="Position of ROT")
             # ax3.axis('equal')
 
             # ax3.grid()
@@ -603,7 +589,7 @@ def test(args):
             ax4.plot(t_gt, rpy_gt[:, 2])
             ax4.plot(t_pred, rpy_pred[:, 2])
             ax4.plot(t_ekf, rpy_ekf[:, 2])
-            ax4.set(xlabel=r'time (sec)', ylabel=r'$yaw (rad)', title="orientation of husky")
+            ax4.set(xlabel=r'time (sec)', ylabel=r'$yaw (rad)', title="orientation of ROT")
 
             ax4.grid()
 
@@ -615,7 +601,7 @@ def test(args):
             # ax5.plot(t_pred, vel_loc_pred[:, :2])
             # ax5.plot(t_ekf, vel_loc_ekf[:, :2])
 
-            # ax5.set(xlabel=r'time (sec)', ylabel=r'local velocity (m/s)', title="velocity of husky")
+            # ax5.set(xlabel=r'time (sec)', ylabel=r'local velocity (m/s)', title="velocity of ROT")
 
             # ax5.grid()
 
@@ -623,20 +609,18 @@ def test(args):
 
 
             # fig6, ax6 = plt.subplots(figsize=(20,10))
-            # # ax6.plot(t_gt, w_gt[:,0])
-            # # ax6.plot(t_gt, w_gt[:,1])
+            # ax6.plot(t_gt, w_gt[:,0])
+            # ax6.plot(t_gt, w_gt[:,1])
             # ax6.plot(t_gt, w_gt[:,2])
-            # # ax6.plot(t_pred, w_pred[:,0])
-            # # ax6.plot(t_pred, w_pred[:,1])
+            # ax6.plot(t_pred, w_pred[:,0])
+            # ax6.plot(t_pred, w_pred[:,1])
             # ax6.plot(t_pred, w_pred[:,2])
-            # ax6.plot(t_ekf, w_ekf[:,2])
 
-            # ax6.set(xlabel=r'time (sec)', ylabel=r'angular velocity (rad/s)', title="angular velocity of husky")
+            # ax6.set(xlabel=r'time (sec)', ylabel=r'angular velocity (rad/s)', title="angular velocity of ROT")
 
             # ax6.grid()
 
             # ax6.legend(['gt_x', 'gt_y', 'gt_z', 'Predicted_x', 'Predicted_y', 'Predicted_z'])
-            # ax6.legend(['gt_z', 'Predicted_z', 'ekf_z'])
 
             if args.show_plot:
                 plt.show()
@@ -651,26 +635,19 @@ def test(args):
 
         plt.close('all')
 
-    ate_all_pred = np.array(ate_all_pred)
-    rte_all_pred = np.array(rte_all_pred)
-    ate_all_ekf = np.array(ate_all_ekf)
-    rte_all_ekf = np.array(rte_all_ekf)
+    ate_all = np.array(ate_all)
+    rte_all = np.array(rte_all)
 
-
-    measure_pred = format_string('ATE_pred', 'RTE_pred', sep='\t')
-    values_pred = format_string(np.mean(ate_all_pred), np.mean(rte_all_pred), sep='\t')
-    print(measure_pred, '\n', values_pred)
-
-    measure_ekf = format_string('ATE_ekf', 'RTE_ekf', sep='\t')
-    values_ekf = format_string(np.mean(ate_all_ekf), np.mean(rte_all_ekf), sep='\t')
-    print(measure_ekf, '\n', values_ekf)
+    measure = format_string('ATE', 'RTE', sep='\t')
+    values = format_string(np.mean(ate_all), np.mean(rte_all), sep='\t')
+    print(measure, '\n', values)
 
     if log_file is not None:
         with open(log_file, 'a') as f:
-            f.write(measure_pred + '\n')
-            f.write(values_pred)
+            f.write(measure + '\n')
+            f.write(values)
 
-class HuskyLSTMArgs():
+class HuskyCNNArgs():
     # common
     type = 'lstm_bi' # choices=['lstm','lstm_bi']
     path_data_base = "../../../Datasets/husky_dataset/"
@@ -678,23 +655,10 @@ class HuskyLSTMArgs():
     path_results = "../results"
     feature_sigma = 0.001
     target_sigma = 0.0
-
-    window_size = 600 #일단 600일때 성능이 좋았음!!!!!!!!!!!!!!!!!!!!!!!!!!
     # window_size = 400
-    # window_size = 300
-    # window_size = 240
-    # window_size = 208
-    # window_size = 200
-    # window_size = 100
-
-    step_size = 150
+    window_size = 50
     # step_size = 100
-    # step_size = 75
-    # step_size = 60
-    # step_size = 52
-    # step_size = 50
-    # step_size = 25
-
+    step_size = 25
     batch_size = 72
     # batch_size = 36
     num_workers = 1
@@ -706,57 +670,37 @@ class HuskyLSTMArgs():
 
     # training, cross-validation and test dataset
     # train_list = ['move1', 'move2', 'move3', 'move4', 'move5', 'move6', 'move7', 'move8', 'move9', 'origin1', 'origin2', 'origin3', 'origin4']
-    train_list = ['move1', 'move2', 'move3', 'move4', 'move5', 'move8', 'move10', 'move14', 'move15', 'move16', 'move17', 'move18', 'move19', 'move20', 'move21', 'origin3', 'origin4', 'origin7', 'origin8']
-    # train_list = ['move2', 'move3', 'move4', 'move5', 'move6', 'move7', 'move9', 'move11', 'move12', 'move13', 'move14', 'move15', 'move16', 'move17', 'move18', 'move21', 'origin1', 'origin2']
-    # train_list = ['move3', 'move4', 'move5', 'move6', 'move7', 'move8', 'move9', 'move10', 'move13', 'move14', 'move15', 'move16', 'move17', 'move18', 'move19', 'move20', 'move21', 'origin3', 'origin4', 'origin7', 'origin8']
-    # train_list = ['move1', 'move2', 'move3', 'move4', 'move5', 'move6', 'move7', 'move10', 'move11', 'move12', 'move13', 'move14', 'move15', 'move16', 'move17', 'move18', 'move19', 'move20', 'move21', 'origin2', 'origin3', 'origin4', 'origin7', 'origin8']
+    train_list = ['move1', 'move2', 'move3', 'move4', 'move5', 'move6', 'origin1', 'origin2', 'origin3', 'origin4']
     # train_list = ['square_cw', 'square_ccw', 'circle_cw', 'circle_ccw', 'ribbon', 'inf', 'move1', 'move2', 'move3', 'move4', 'move5', 'move6', 'move7', 'move8', 'origin1', 'origin2', 'origin3', 'origin4']
-    # val_list = ['origin1', 'move7', 'move8']
-    val_list = ['move7', 'move6', 'move11']
+    val_list = ['origin1', 'move7', 'move8']
     # val_list = ['random_1', 'random_2']
     # test_list = ['origin4', 'move9']
-    # test_list = ['move12', 'move13', 'origin1', 'origin2', 'move7', 'move6', 'move11']
-    test_list = ['move12', 'move13', 'origin1', 'origin2']
-    # test_list = ['origin3']
-    # test_list = ['move6']
+    test_list = ['move9']
+    # test_list = ['move7']
 
     # lstm
     layers = 3
     layer_size = 100
 
     # train
-    # continue_from = "../results/checkpoints/icheckpoint_husky_lstm_599.pt"
-    # continue_from = "../results/checkpoints/checkpoint_husky_lstm_227.pt"
+    # continue_from = "../results/checkpoints/checkpoint_ROT_844.pt"
+    # continue_from = "../results/checkpoints/checkpoint_husky_3576.pt"
     continue_from = None
     epochs = 2000
     save_interval = 200
     lr = 0.0003
     quiet = False
-    use_scheduler = True
-    # use_scheduler = False
+    use_scheduler = False
     force_lr = False
-    dropout = 0.1
-    # dropout = None
+    # dropout = 
 
     # test
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_556.pt" #only dp 600 + origin: 4100 ### i can write paper!!!!!!!!!!!!!!!!!!!!!!!!!
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_356.pt" #only dp 600 + origin: 2000 n:4
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_798.pt" #only dp 600 + origin: 2000 n:4  loss:37.1
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1758.pt" #only dp 600 + origin: 2000 n:4  lr rate 15
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_849.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 2000
-    model_path = "../results/checkpoints/checkpoint_husky_lstm_835.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 1500
-    model_path = "../results/checkpoints/checkpoint_husky_lstm_935.pt" #only dRot 600 + origin: 2000 n:4  loss:4.34
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1943.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 1000
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1299.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 500
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_330.pt" #only dRot 600 n:5 2000 
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_237.pt" #only dRot 600 n:5 2000 loss: 30.3
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_229.pt" #only dRot 400 n:4 loss:8.1
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_342.pt" #only p 600 + origin n:4    loss:362
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_412.pt" #only p 600 + origin n:3    loss:348 when reduce lerarning rate is very important!!!
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_298.pt" #only dp 600 loss:                 if too fast, then you gonna local minima!
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_376.pt" #only dp 600 loss: 30.9
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_730.pt" #only dp 600 loss: 30.5
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_303.pt" #only dp 400   loss:21.0        
+    # model_path = "../results/checkpoints/checkpoint_ROT_gpu_server.pt"
+    # model_path = "../results/checkpoints/checkpoint_ROT_2729.pt"
+    # model_path = "../results/checkpoints/checkpoint_husky_2046.pt" #using loss w
+    # model_path = "../results/checkpoints/checkpoint_husky_518.pt" #using loss w with huber
+    # model_path = "../results/checkpoints/checkpoint_husky_670.pt" #using loss dRot with no normalization: 11.x
+    model_path = "../results/checkpoints/checkpoint_husky_172.pt" #using loss dRot with normalization: 6.x
     fast_test = False
     show_plot = True
 
@@ -772,7 +716,7 @@ class HuskyLSTMArgs():
 
 if __name__ == '__main__':
 
-    args = HuskyLSTMArgs()
+    args = HuskyCNNArgs()
     np.set_printoptions(formatter={'all': lambda x: '{:.6f}'.format(x)})
 
     if args.mode == 'train':

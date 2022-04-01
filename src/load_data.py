@@ -280,7 +280,7 @@ if __name__ == '__main__':
     for dataset_name in datasets:
         # dataset_name = "fast_zigzag_left"
         # dataset_name = "fast_square_ccw"
-        path_data_base = "../../Datasets/husky_dataset/"+dataset_name +"/"
+        path_data_base = "../../Datasets/husky_dataset/21109"+dataset_name +"/"
         path_data_save = "data"
         path_results = "results"
 

@@ -236,7 +236,7 @@ def interp_data(t_x, x, t):
 
 if __name__ == '__main__':
     # datasets = ["square_ccw","square_cw","circle_ccw","circle_cw","ribbon","inf","random_1","random_2"]
-    datasets = ['random_2', 'circle_ccw']
+    datasets = ['random_2']
     for dataset_name in datasets:
         path_data_base = "../../../Datasets/husky_dataset/211207/"+dataset_name +"/"
         path_data_save = "../data"
@@ -347,7 +347,7 @@ if __name__ == '__main__':
                         Rot_imu_temp[i,j,:] = imu_data[i,(7+3*j):(10+3*j)]
                     gravity_vec[i] = imu_data[i,30:33]
                     acc_imu[i] = R_imu_from_robot.dot(imu_data[i,22:25] - ((gravity - g_corr)/gravity)*gravity_vec[i])
-                    acc_imu_temp[i,0:3] = imu_data[i,22:25] - (((gravity - g_corr)/gravity)*gravity_vec[i])[0:2]
+                    acc_imu_temp[i,0:3] = imu_data[i,22:25] - (((gravity - g_corr)/gravity)*gravity_vec[i])[0:3]
                     # acc_imu_temp[i,0:2] = imu_data[i,22:24]
                     acc_imu[i] = R_imu_from_robot.dot(acc_imu_temp[i])
 

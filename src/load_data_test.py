@@ -4,7 +4,7 @@ import os
 import math
 import pickle
 import copy
-from result_plot_test import *
+from result_plot_test import results_plot_test
 from scipy.signal import filtfilt, butter
 from scipy.spatial.transform import Rotation as R
 
@@ -236,196 +236,285 @@ def interp_data(t_x, x, t):
 
 if __name__ == '__main__':
     # datasets = ["square_ccw","square_cw","circle_ccw","circle_cw","ribbon","inf","random_1","random_2"]
-    datasets = ['test']
+    # datasets = ["origin4"]
+    # datasets = ['move1', 'move2', 'move3', 'move4', 'move5', 'move6', 'move7', 'move8', 'move9', 'origin1', 'origin2', 'origin3','origin4']
+    # datasets = ['origin4','move9']
+    # datasets = ['move10', 'move11', 'move12', 'move13', 'move14', 'move15', 'move16', 'move17', 'move18', 'move19', 'move20', 'move21', 
+    #             'origin5', 'origin6', 'origin7', 'origin8']
+    datasets = ['origin8']
     for dataset_name in datasets:
-        path_data_base = "../test_dataset/220128/"+dataset_name +"/"
+        # path_data_base = "../test_dataset/220128/"+dataset_name +"/"
+        # path_data_base = "../../../Datasets/husky_dataset/"+dataset_name +"/"
+        path_data_base = "../../../Datasets/husky_dataset/"
         path_data_save = "../data"
         path_results = "../results"
 
         date_dirs = os.listdir(path_data_base)
         for n_iter, date_dir in enumerate(date_dirs):
-            if (date_dir == dataset_name+"_mocap.txt"):
-                path1 = os.path.join(path_data_base, date_dir)
-                gt_csv = pd.read_csv(path1,sep="\t")
-                gt_data = gt_csv.to_numpy()
+            path1 = os.path.join(path_data_base, date_dir)
+            date_dirs2 = os.listdir(path1)
+            for n_iter2, date_dir2 in enumerate(date_dirs2):
+                path2 = os.path.join(path1,date_dir2)
+                dirs = os.listdir(path2)
+                for _, dir in enumerate(dirs):
+                    path3 = os.path.join(path2,dir)
+                    if (dir == dataset_name+"_mocap.txt"):
+                        gt_csv = pd.read_csv(path3,sep="\t")
+                        gt_data = gt_csv.to_numpy()
 
-                gt_front_left = gt_data[:,1:4]/1e3
-                gt_back_left = gt_data[:,4:7]/1e3
-                gt_back_right = gt_data[:,7:10]/1e3
-                gt_front_right = gt_data[:,10:13]/1e3
+                        p_gt_temp = np.zeros((len(gt_data),3))
+                        p_gt = np.zeros((len(gt_data),3))
+                        v_gt = np.zeros((len(gt_data),3))
+                        v_loc_gt = np.zeros((len(gt_data),3))
+                        t_gt = np.zeros(len(gt_data))
 
-                p_gt_temp = np.zeros((len(gt_back_left),3))
-                p_gt = np.zeros((len(gt_back_left),3))
-                v_gt = np.zeros((len(gt_back_left),3))
-                t_gt = np.zeros(len(gt_back_left))
+                        Rot_gt_temp = np.zeros((len(gt_data),3,3))
+                        Rot_gt = np.zeros((len(gt_data),3,3))
 
-                Rot_gt_temp = np.zeros((len(gt_back_left),3,3))
-                Rot_gt = np.zeros((len(gt_back_left),3,3))
+                        x_axis = np.zeros((len(gt_data),3))
+                        y_axis = np.zeros((len(gt_data),3))
+                        z_axis = np.zeros((len(gt_data),3))
 
-                # x_axis_temp = ((gt_front_right - gt_front_left) + (gt_back_right - gt_back_left))/2
-                # y_axis_temp = ((gt_front_right - gt_back_right) + (gt_front_left - gt_back_left))/2
-                y_axis_temp = ((gt_front_left - gt_front_right) + (gt_back_left - gt_back_right))/2
-                x_axis_temp = ((gt_front_right - gt_back_right) + (gt_front_left - gt_back_left))/2
+                        roll_gt = np.zeros(len(gt_data))
+                        pitch_gt = np.zeros(len(gt_data))
+                        yaw_gt = np.zeros(len(gt_data))
 
-                x_axis = np.zeros((len(gt_back_left),3))
-                y_axis = np.zeros((len(gt_back_left),3))
-                z_axis = np.zeros((len(gt_back_left),3))
+                        # if (date_dir == '211207'):
+                        #     gt_front_left = gt_data[:,1:4]/1e3
+                        #     gt_front_right = gt_data[:,4:7]/1e3
+                        #     gt_back_left = gt_data[:,7:10]/1e3
+                        #     gt_back_right = gt_data[:,10:13]/1e3
 
-                roll_gt = np.zeros(len(gt_front_left))
-                pitch_gt = np.zeros(len(gt_front_left))
-                yaw_gt = np.zeros(len(gt_front_left))
+                        #     y_axis_temp = ((gt_front_left - gt_front_right) + (gt_back_left - gt_back_right))/2
+                        #     x_axis_temp = ((gt_front_right - gt_back_right) + (gt_front_left - gt_back_left))/2
 
-                for i in range(len(gt_back_left)):
-                    x_axis[i] = x_axis_temp[i]/(math.sqrt(math.pow(x_axis_temp[i,0],2)+math.pow(x_axis_temp[i,1],2)+math.pow(x_axis_temp[i,2],2)))
-                    y_axis[i] = y_axis_temp[i]/(math.sqrt(math.pow(y_axis_temp[i,0],2)+math.pow(y_axis_temp[i,1],2)+math.pow(y_axis_temp[i,2],2)))
-                    z_axis_temp = (skew(x_axis_temp[i]).dot(y_axis_temp[i]))
-                    z_axis[i] = z_axis_temp/(math.sqrt(math.pow(z_axis_temp[0],2)+math.pow(z_axis_temp[1],2)+math.pow(z_axis_temp[2],2)))
+                        #     for i in range(len(gt_data)):
+                        #         x_axis[i] = x_axis_temp[i]/(math.sqrt(math.pow(x_axis_temp[i,0],2)+math.pow(x_axis_temp[i,1],2)+math.pow(x_axis_temp[i,2],2)))
+                        #         y_axis[i] = y_axis_temp[i]/(math.sqrt(math.pow(y_axis_temp[i,0],2)+math.pow(y_axis_temp[i,1],2)+math.pow(y_axis_temp[i,2],2)))
+                        #         z_axis_temp = (skew(x_axis_temp[i]).dot(y_axis_temp[i]))
+                        #         z_axis[i] = z_axis_temp/(math.sqrt(math.pow(z_axis_temp[0],2)+math.pow(z_axis_temp[1],2)+math.pow(z_axis_temp[2],2)))
 
-                    Rot_gt_temp[i,:,0] = x_axis[i]
-                    Rot_gt_temp[i,:,1] = y_axis[i]
-                    Rot_gt_temp[i,:,2] = z_axis[i]
-    
-                    ratio1 = 0.29
-                    ratio2 = 0.495
-                    p_gt_left = gt_back_left[i,0:2]+(gt_front_left[i,0:2] - gt_back_left[i,0:2])*ratio1
-                    p_gt_right = gt_back_right[i,0:2] + (gt_front_right[i,0:2] - gt_back_right[i,0:2])*ratio1
-                    p_gt_temp[i,0:2] = p_gt_left + (p_gt_right - p_gt_left) * ratio2
-                    p_gt_temp[i,2] = (gt_front_left[i,2]+gt_back_left[i,2]+gt_back_right[i,2]+gt_front_right[i,2])/4
-                    t_gt[i] = gt_data[i,0] - gt_data[0,0]
-
-                p_gt_init = copy.deepcopy(p_gt_temp[0])
-                for i in range(len(gt_back_left)):
-                    p_gt[i] = p_gt_temp[i] - p_gt_init
-
-                Rot_gt_init = copy.deepcopy(Rot_gt_temp[0])
-                for i in range(len(gt_back_left)):
-                    Rot_gt[i] = (Rot_gt_init.transpose()).dot(Rot_gt_temp[i])
-
-                    roll_gt[i], pitch_gt[i], yaw_gt[i] = to_rpy(Rot_gt[i])
-
-                    p_gt[i] = (Rot_gt_init.transpose()).dot(p_gt[i])
-
-
-                    if i >=1:
-                        v_gt[i] = (p_gt[i]-p_gt[i-1])/0.01
-
-                ang_gt = np.zeros((len(gt_back_left),3))
-                ang_gt[:, 0] = roll_gt
-                ang_gt[:, 1] = pitch_gt
-                ang_gt[:, 2] = yaw_gt
-
-            elif (date_dir == dataset_name+"-imu-data.csv"):
-                    path1 = os.path.join(path_data_base, date_dir)
-                    imu_csv = pd.read_csv(path1,sep=",")
-                    imu_data = imu_csv.to_numpy()
-
-                    acc_imu_temp = np.zeros((len(imu_data),3))
-                    acc_imu = np.zeros((len(imu_data),3))
-                    acc_filter_imu =np.zeros((len(imu_data),3))
-                    t_imu = np.zeros((len(imu_data)))
-                    quat_imu = np.zeros((len(imu_data),4))
-                    Rot_imu_temp = np.zeros((len(imu_data),3,3))
-                    Rot_imu = np.zeros((len(imu_data),3,3))
-                    ang_imu = np.zeros((len(imu_data),3))
-                    gravity_vec = np.zeros((len(imu_data),3))
-
-                    R_imu_from_mocap = np.identity(3)
-                    R_imu_from_mocap[:,0] = (-1,0,0)
-                    R_imu_from_mocap[:,1] = (0,1,0)
-                    R_imu_from_mocap[:,2] = (0,0,-1)
-
-                    R_imu_from_robot = np.identity(3)
-                    R_imu_from_robot[:,0] = (0,1,0)
-                    R_imu_from_robot[:,1] = (1,0,0)
-                    R_imu_from_robot[:,2] = (0,0,-1)
-
-                    gravity = 9.80665
-                    g_corr = 9.77275
-                    g = np.array([0, 0, 9.80665])
-
-                    for i in range(len(imu_data)):
-                        quat_imu[i] = imu_data[i,5:9]
-                        Rot_imu_temp[i] = quaternion_to_rotation_matrix(quat_imu[i])
-
-                        # acc_imu[i] = R_imu_from_robot.dot(imu_data[i,22:25] - ((gravity - g_corr)/gravity)*gravity_vec[i])
-                        # acc_imu_temp[i,0:2] = imu_data[i,22:24] - (((gravity - g_corr)/gravity)*gravity_vec[i])[0:2]
-                        acc_imu[i] = R_imu_from_robot.dot((imu_data[i,14:17]) + g)
-
-                        t_imu[i] = imu_data[i,2] - imu_data[0,2]
-                    
-                    # cut_value = [0.26,5]
-                    # acc_filter_imu = high_pass_filter(acc_imu, cut_value)
-                    acc_filter_imu = acc_imu
-                    Rot_imu_init = copy.deepcopy(Rot_imu_temp[0])
-
-                    for i in range(len(imu_data)):
-                        Rot_imu[i] = (Rot_imu_init.transpose()).dot(Rot_imu_temp[i])
-
-                    roll_imu = np.zeros(len(Rot_imu))
-                    pitch_imu = np.zeros(len(Rot_imu))
-                    yaw_imu = np.zeros(len(Rot_imu))
-                    
-                    for i in range(len(imu_data)):
-                        roll_imu[i], pitch_imu[i], yaw_imu[i] = to_rpy(Rot_imu[i])
-                        quat_imu[i] = (R.from_matrix(Rot_imu[i])).as_quat() #x,y,z,w
-
-                    ang_imu = np.zeros((len(Rot_imu),3))
-                    ang_imu[:,0] = roll_imu
-                    ang_imu[:,1] = pitch_imu
-                    ang_imu[:,2] = yaw_imu
-
-                    dt_imu = t_imu[1:] - t_imu[:-1]
-            elif (date_dir == dataset_name+"-husky_velocity_controller-odom.csv"):
+                        #         Rot_gt_temp[i,:,0] = x_axis[i]
+                        #         Rot_gt_temp[i,:,1] = y_axis[i]
+                        #         Rot_gt_temp[i,:,2] = z_axis[i]
                 
-                path1 = os.path.join(path_data_base, date_dir)
-                wheel_csv = pd.read_csv(path1,sep=",")
-                wheel_data = wheel_csv.to_numpy()
+                        #         ratio1 = 0.29
+                        #         ratio2 = 0.495
+                        #         p_gt_left = gt_back_left[i,0:2]+(gt_front_left[i,0:2] - gt_back_left[i,0:2])*ratio1
+                        #         p_gt_right = gt_back_right[i,0:2] + (gt_front_right[i,0:2] - gt_back_right[i,0:2])*ratio1
+                        #         p_gt_temp[i,0:2] = p_gt_left + (p_gt_right - p_gt_left) * ratio2
+                        #         p_gt_temp[i,2] = (gt_front_left[i,2]+gt_back_left[i,2]+gt_back_right[i,2]+gt_front_right[i,2])/4
 
-                p_wheel = np.zeros((len(wheel_data),3))
-                v_wheel = np.zeros((len(wheel_data),3))
-                t_wheel = np.zeros(len(wheel_data))
-                w_wheel = np.zeros((len(wheel_data),3))
+                        # elif (date_dir == '220311' or date_dir == '220325'):
+                        gt_front = gt_data[:,1:4]/1e3
+                        gt_center = gt_data[:,4:7]/1e3
+                        gt_left = gt_data[:,7:10]/1e3
+                        gt_right = gt_data[:,10:13]/1e3
 
-                quaternion = np.zeros((len(wheel_data),4))
-                Rot_wheel_temp = np.zeros((len(wheel_data),3,3))
-                Rot_wheel = np.zeros((len(wheel_data),3,3))
+                        x_axis_temp = (gt_front - gt_center)
+                        y_axis_temp = (gt_left - gt_center)
 
-                roll_wheel = np.zeros(len(wheel_data))
-                pitch_wheel = np.zeros(len(wheel_data))
-                yaw_wheel = np.zeros(len(wheel_data))
+                        for i in range(len(gt_data)):
+                            x_axis[i] = x_axis_temp[i]/(math.sqrt(math.pow(x_axis_temp[i,0],2)+math.pow(x_axis_temp[i,1],2)+math.pow(x_axis_temp[i,2],2)))
+                            y_axis[i] = y_axis_temp[i]/(math.sqrt(math.pow(y_axis_temp[i,0],2)+math.pow(y_axis_temp[i,1],2)+math.pow(y_axis_temp[i,2],2)))
+                            z_axis_temp = (skew(x_axis_temp[i]).dot(y_axis_temp[i]))
+                            z_axis[i] = z_axis_temp/(math.sqrt(math.pow(z_axis_temp[0],2)+math.pow(z_axis_temp[1],2)+math.pow(z_axis_temp[2],2)))
+                            y_axis[i] = (skew(z_axis[i]).dot(x_axis[i]))
+                            y_axis[i] = y_axis[i]/(math.sqrt(math.pow(y_axis[i,0],2)+math.pow(y_axis[i,1],2)+math.pow(y_axis[i,2],2)))
 
-                R_husky_from_mocap = np.identity(3)
-                R_husky_from_mocap[:,0] = (0,1,0)
-                R_husky_from_mocap[:,1] = (-1,0,0)
-                R_husky_from_mocap[:,2] = (0,0,1)
-                
-                for i in range(len(wheel_data)):
-                    p_wheel[i] = wheel_data[i,6:9]
-                    # p_wheel[i] = R_husky_from_mocap.dot(p_wheel[i])
-                    v_wheel[i] = wheel_data[i,14:17]
-                    # v_wheel[i] = R_husky_from_mocap.dot(v_wheel[i])
+                            Rot_gt_temp[i,:,0] = x_axis[i]
+                            Rot_gt_temp[i,:,1] = y_axis[i]
+                            Rot_gt_temp[i,:,2] = z_axis[i]
 
-                    t_wheel[i] = (wheel_data[i,2] + wheel_data[i,3]/1e9) - (wheel_data[0,2] + wheel_data[0,3]/1e9)
+                        p_gt_temp = gt_center - x_axis*0.21
+                        # p_gt_temp = gt_center
+
+                        t_gt_temp = gt_data[:,0]
+                        t_gt_init = copy.deepcopy(gt_data[0,0])
+                        p_gt_init = copy.deepcopy(p_gt_temp[0])
+
+                        p_gt = p_gt_temp - p_gt_init
+                        t_gt = t_gt_temp - t_gt_init
+
+                        Rot_gt_init = copy.deepcopy(Rot_gt_temp[0])
+                        for i in range(len(gt_data)):
+                            Rot_gt[i] = (Rot_gt_init.transpose()).dot(Rot_gt_temp[i])
+
+                            roll_gt[i], pitch_gt[i], yaw_gt[i] = to_rpy(Rot_gt[i])
+
+                            p_gt[i] = (Rot_gt_init.transpose()).dot(p_gt[i])
+
+
+                            if i >=1:
+                                v_gt[i] = (p_gt[i]-p_gt[i-1])/0.01
+
+                        ang_gt = np.zeros((len(gt_data),3))
+                        ang_gt[:, 0] = roll_gt
+                        ang_gt[:, 1] = pitch_gt
+                        ang_gt[:, 2] = yaw_gt
+
+                        for i in range(len(gt_data)):
+                            v_loc_gt[i] = (Rot_gt[i].transpose()).dot(v_gt[i])
+
+                    elif (dir == dataset_name+"-imu-data.csv"):
+                        imu_csv = pd.read_csv(path3,sep=",")
+                        imu_data = imu_csv.to_numpy()
+
+                        acc_imu_temp = np.zeros((len(imu_data),3))
+                        acc_imu = np.zeros((len(imu_data),3))
+                        acc_filter_imu =np.zeros((len(imu_data),3))
+                        t_imu = np.zeros((len(imu_data)))
+                        quat_imu = np.zeros((len(imu_data),4))
+                        Rot_imu_temp = np.zeros((len(imu_data),3,3))
+                        Rot_imu = np.zeros((len(imu_data),3,3))
+                        ang_imu = np.zeros((len(imu_data),3))
+                        gravity_vec = np.zeros((len(imu_data),3))
+                        w_imu_temp = np.zeros((len(imu_data),3))
+                        w_imu = np.zeros((len(imu_data),3))
+                        dRot_imu = np.zeros((len(imu_data),3,3))
+
+                        R_imu_from_robot = np.identity(3)
+                        R_imu_from_robot[:,0] = (0,1,0)
+                        R_imu_from_robot[:,1] = (1,0,0)
+                        R_imu_from_robot[:,2] = (0,0,-1)
+
+                        gravity = 9.80665
+                        g_corr = 9.77275
+                        g = np.array([0, 0, 9.80665])
+
+                        # if (date_dir == '211207'):
+                        #     w_imu_temp = imu_data[:,26:29]
+
+                        #     for i in range(len(imu_data)):
+                        #         w_imu[i] = R_imu_from_robot.dot(w_imu_temp[i])
+                        #         acc_imu[i] = R_imu_from_robot.dot(imu_data[i,22:25])
+
+                        #         t_imu[i] = imu_data[i,2] - imu_data[0,2]
+                        #         dRot_imu[i] = so3exp(0.01*w_imu[i])
+
+                        # elif (date_dir == '220311'):
+                        w_imu_temp = imu_data[:,10:13]
+
+                        for i in range(len(imu_data)):
+                            w_imu[i] = R_imu_from_robot.dot(w_imu_temp[i])
+                            acc_imu[i] = R_imu_from_robot.dot((imu_data[i,14:17]) + g)
+
+                            t_imu[i] = (imu_data[i,2] + imu_data[i,3]/1e9) - (imu_data[0,2] + imu_data[0,3]/1e9) 
+                        
+                            dRot_imu[i] = so3exp(0.01*w_imu[i])
+
+                        Rot_imu[0] = copy.deepcopy(dRot_imu[0])
+                        acc_filter_imu = acc_imu
+
+                        for i in range(1,len(imu_data)):
+                            Rot_imu[i] = Rot_imu[i-1].dot(dRot_imu[i])
+
+                        roll_imu = np.zeros(len(Rot_imu))
+                        pitch_imu = np.zeros(len(Rot_imu))
+                        yaw_imu = np.zeros(len(Rot_imu))
+                        
+                        for i in range(len(imu_data)):
+                            roll_imu[i], pitch_imu[i], yaw_imu[i] = to_rpy(Rot_imu[i])
+                            quat_imu[i] = (R.from_matrix(Rot_imu[i])).as_quat() #x,y,z,w
                     
-                    quaternion[i] = wheel_data[i,9:13]
-                    Rot_wheel_temp[i] = quaternion_to_rotation_matrix(quaternion[i])
+                        ang_imu = np.zeros((len(Rot_imu),3))
+                        ang_imu[:,0] = roll_imu
+                        ang_imu[:,1] = pitch_imu
+                        ang_imu[:,2] = yaw_imu
 
-                Rot_wheel_init = copy.deepcopy(Rot_wheel_temp[0])
+                        dt_imu = t_imu[1:] - t_imu[:-1]
 
-                for i in range(len(wheel_data)):
-                    Rot_wheel[i] = (Rot_wheel_init.transpose()).dot(Rot_wheel_temp[i])
-                    roll_wheel[i], pitch_wheel[i], yaw_wheel[i] = to_rpy(Rot_wheel[i])
+                    elif (dir == dataset_name+"-husky_velocity_controller-odom.csv"):
+                        wheel_csv = pd.read_csv(path3,sep=",")
+                        wheel_data = wheel_csv.to_numpy()
 
-                ang_wheel = np.zeros((len(wheel_data),3))
-                ang_wheel[:, 0] = roll_wheel
-                ang_wheel[:, 1] = pitch_wheel
-                ang_wheel[:, 2] = yaw_wheel
+                        p_wheel = np.zeros((len(wheel_data),3))
+                        v_wheel = np.zeros((len(wheel_data),3))
+                        t_wheel = np.zeros(len(wheel_data))
+                        w_wheel = np.zeros((len(wheel_data),3))
 
-                for i in range(len(wheel_data)):
-                    t_wheel[i] = (wheel_data[i,2] + wheel_data[i,3]/1e9) - (wheel_data[0,2] + wheel_data[0,3]/1e9)
+                        quaternion = np.zeros((len(wheel_data),4))
+                        Rot_wheel_temp = np.zeros((len(wheel_data),3,3))
+                        Rot_wheel = np.zeros((len(wheel_data),3,3))
+
+                        roll_wheel = np.zeros(len(wheel_data))
+                        pitch_wheel = np.zeros(len(wheel_data))
+                        yaw_wheel = np.zeros(len(wheel_data))
+
+                        R_husky_from_mocap = np.identity(3)
+                        R_husky_from_mocap[:,0] = (0,1,0)
+                        R_husky_from_mocap[:,1] = (-1,0,0)
+                        R_husky_from_mocap[:,2] = (0,0,1)
+                        
+                        for i in range(len(wheel_data)):
+                            p_wheel[i] = wheel_data[i,6:9]
+                            # p_wheel[i] = R_husky_from_mocap.dot(p_wheel[i])
+                            v_wheel[i] = wheel_data[i,14:17]
+                            # v_wheel[i] = R_husky_from_mocap.dot(v_wheel[i])
+
+                            t_wheel[i] = (wheel_data[i,2] + wheel_data[i,3]/1e9) - (wheel_data[0,2] + wheel_data[0,3]/1e9)
+                            
+                            quaternion[i] = wheel_data[i,9:13]
+                            Rot_wheel_temp[i] = quaternion_to_rotation_matrix(quaternion[i])
+
+                        Rot_wheel_init = copy.deepcopy(Rot_wheel_temp[0])
+
+                        for i in range(len(wheel_data)):
+                            Rot_wheel[i] = (Rot_wheel_init.transpose()).dot(Rot_wheel_temp[i])
+                            roll_wheel[i], pitch_wheel[i], yaw_wheel[i] = to_rpy(Rot_wheel[i])
+
+                        ang_wheel = np.zeros((len(wheel_data),3))
+                        ang_wheel[:, 0] = roll_wheel
+                        ang_wheel[:, 1] = pitch_wheel
+                        ang_wheel[:, 2] = yaw_wheel
+
+                        for i in range(len(wheel_data)):
+                            t_wheel[i] = (wheel_data[i,2] + wheel_data[i,3]/1e9) - (wheel_data[0,2] + wheel_data[0,3]/1e9)
+
+                    elif (dir == dataset_name+"-odometry-filtered.csv"):
+                        ekf_csv = pd.read_csv(path3,sep=",")
+                        ekf_data = ekf_csv.to_numpy()
+
+                        p_ekf = np.zeros((len(ekf_data),3))
+                        v_ekf = np.zeros((len(ekf_data),3))
+                        v_loc_ekf = np.zeros((len(ekf_data),3))
+                        t_ekf = np.zeros(len(ekf_data))
+                        w_ekf = np.zeros((len(ekf_data),3))
+
+                        quaternion = np.zeros((len(ekf_data),4))
+                        Rot_ekf_temp = np.zeros((len(ekf_data),3,3))
+                        Rot_ekf = np.zeros((len(ekf_data),3,3))
+
+                        roll_ekf = np.zeros(len(ekf_data))
+                        pitch_ekf = np.zeros(len(ekf_data))
+                        yaw_ekf = np.zeros(len(ekf_data))
+                        
+                        for i in range(len(ekf_data)):
+                            p_ekf[i] = ekf_data[i,6:9]
+                            v_ekf[i] = ekf_data[i,14:17]
+
+                            t_ekf[i] = (ekf_data[i,2] + ekf_data[i,3]/1e9) - (ekf_data[0,2] + ekf_data[0,3]/1e9)
+                            
+                            quaternion[i] = ekf_data[i,9:13]
+                            Rot_ekf_temp[i] = quaternion_to_rotation_matrix(quaternion[i])
+
+                        Rot_ekf_init = copy.deepcopy(Rot_ekf_temp[0])
+
+                        for i in range(len(ekf_data)):
+                            Rot_ekf[i] = (Rot_ekf_init.transpose()).dot(Rot_ekf_temp[i])
+                            roll_ekf[i], pitch_ekf[i], yaw_ekf[i] = to_rpy(Rot_ekf[i])
+
+                        ang_ekf = np.zeros((len(ekf_data),3))
+                        ang_ekf[:, 0] = roll_ekf
+                        ang_ekf[:, 1] = pitch_ekf
+                        ang_ekf[:, 2] = yaw_ekf
+
+                        for i in range(len(ekf_data)):
+                            t_ekf[i] = (ekf_data[i,2] + ekf_data[i,3]/1e9) - (ekf_data[0,2] + ekf_data[0,3]/1e9)
+                            v_loc_ekf[i] = (Rot_ekf[i].transpose()).dot(v_ekf[i])
 
         mondict_gt = {
-            't_gt': t_gt, 'p_gt': p_gt, 'Rot_gt': Rot_gt,'ang_gt': ang_gt, 'v_gt': v_gt,
+            't_gt': t_gt, 'p_gt': p_gt, 'Rot_gt': Rot_gt,'ang_gt': ang_gt, 'v_gt': v_gt, 'v_loc_gt': v_loc_gt,
              'name': dataset_name, 't0': t_gt[0]
             }
         dump(mondict_gt, path_data_save, dataset_name + "_gt.p")
@@ -440,10 +529,13 @@ if __name__ == '__main__':
 
         v_wheel_joint = interp_data(t_wheel, v_wheel, t_imu)
         p_joint_imu, v_joint_imu = run_joint(t_imu,v_wheel_joint, Rot_imu)
-        
+        v_loc_joint_imu = np.zeros((len(imu_data),3))
+        for i in range(len(imu_data)):
+            v_loc_joint_imu[i] = (Rot_imu[i].transpose()).dot(v_joint_imu[i])
+
         mondict_joint = {
             't_joint_imu':t_imu, 'Rot_joint_imu':Rot_imu,'ang_joint_imu': ang_imu, 'p_joint_imu': p_joint_imu,
-            'v_joint_imu': v_joint_imu
+            'v_joint_imu': v_joint_imu, 'v_loc_joint_imu':v_loc_joint_imu
         }
         dump(mondict_joint, path_data_save, dataset_name + "_joint_imu.p")
         
@@ -453,6 +545,12 @@ if __name__ == '__main__':
         }
         dump(mondict_wheel, path_data_save, dataset_name + "_wheel.p")
 
+        # mondict_ekf = {
+        #     't_ekf':t_ekf, 'Rot_ekf':Rot_ekf,'ang_ekf': ang_ekf, 'p_ekf': p_ekf,
+        #     'v_ekf': v_ekf, 'v_loc_ekf': v_loc_ekf
+        # }
+        # dump(mondict_ekf, path_data_save, dataset_name + "_ekf.p")
 
 
-        results_plot(path_data_save, path_results, dataset_name)    
+
+        results_plot_test(path_data_save, path_results, dataset_name)

@@ -5,6 +5,7 @@ import numpy as np
 from itertools import chain
 from utils import *
 import pickle
+import torch
 
 def from_rpy(roll, pitch, yaw):
     return rotz(yaw).dot(roty(pitch).dot(rotx(roll)))
@@ -60,7 +61,7 @@ def get_imu_estimates(path_results,dataset_name):
     #  Obtain  estimates
     file_name = os.path.join(path_results+"/", dataset_name + "_imu.p")
     if not os.path.exists(file_name):
-        print('No result for imu ' + dataset_name)
+        print('No result for ' + dataset_name)
         return
 
     mondict_imu = load(file_name)
@@ -79,7 +80,7 @@ def get_wheel_estimates(path_results,dataset_name):
     #  Obtain  estimates
     file_name = os.path.join(path_results+"/", dataset_name + "_wheel.p")
     if not os.path.exists(file_name):
-        print('No result for wheel ' + dataset_name)
+        print('No result for ' + dataset_name)
         return
 
     mondict_wheel = load(file_name)
@@ -91,27 +92,11 @@ def get_wheel_estimates(path_results,dataset_name):
 
     return Rot_wheel, ang_wheel, v_wheel , p_wheel, t_wheel
 
-def get_ekf_estimates(path_results,dataset_name):
-    #  Obtain  estimates
-    file_name = os.path.join(path_results+"/", dataset_name + "_ekf.p")
-    if not os.path.exists(file_name):
-        print('No result for ekf ' + dataset_name)
-        return
-
-    mondict_ekf = load(file_name)
-    Rot_ekf = mondict_ekf['Rot_ekf']
-    ang_ekf = mondict_ekf['ang_ekf']
-    v_ekf = mondict_ekf['v_ekf']
-    t_ekf = mondict_ekf['t_ekf']
-    p_ekf = mondict_ekf['p_ekf']
-    v_loc_ekf = mondict_ekf['v_loc_ekf']
-    return Rot_ekf, ang_ekf, v_ekf , p_ekf, t_ekf, v_loc_ekf
-
 def get_joint_imu_estimates(path_results,dataset_name):
     #  Obtain  estimates
     file_name = os.path.join(path_results+"/", dataset_name + "_joint_imu.p")
     if not os.path.exists(file_name):
-        print('No result for joint imu ' + dataset_name)
+        print('No result for ' + dataset_name)
         return
 
     mondict_wheel = load(file_name)
@@ -120,51 +105,59 @@ def get_joint_imu_estimates(path_results,dataset_name):
     v_joint_imu = mondict_wheel['v_joint_imu']
     t_joint_imu = mondict_wheel['t_joint_imu']
     p_joint_imu = mondict_wheel['p_joint_imu']
-    v_loc_joint_imu = mondict_wheel['v_loc_joint_imu']
 
-    return Rot_joint_imu, ang_joint_imu, v_joint_imu , p_joint_imu, t_joint_imu, v_loc_joint_imu
+    return Rot_joint_imu, ang_joint_imu, v_joint_imu , p_joint_imu, t_joint_imu
 
 def get_gt_data(path_data_save,dataset_name):
     file_name = os.path.join(path_data_save+"/", dataset_name + "_gt.p")
     if not os.path.exists(file_name):
-        print('No result for gt ' + dataset_name)
+        print('No result for ' + dataset_name)
         return
 
     mondict_gt = load(file_name)
     
-    return mondict_gt['t_gt'], mondict_gt['Rot_gt'], mondict_gt['ang_gt'], mondict_gt['p_gt'], mondict_gt['v_gt'], mondict_gt['v_loc_gt']
+    return mondict_gt['t_gt'], mondict_gt['Rot_gt'], mondict_gt['ang_gt'], mondict_gt['p_gt'], mondict_gt['v_gt']
 
-def results_plot_test(path_data_save, path_results, dataset_name):
-    plt.close('all')
-    file_name = os.path.join(path_data_save+"/", dataset_name + "_imu.p")
-
+def get_ROT_data(path_data_save,dataset_name):
+    file_name = os.path.join(path_data_save+"/", dataset_name + ".p")
     if not os.path.exists(file_name):
-        print('No result for all ' + dataset_name)
+        print('No result for ' + dataset_name)
+        return
+
+    mondict = load(file_name)
+    
+    return mondict['t_gt'], mondict['t_imu'], mondict['t_wheel'], mondict['ang_gt'], mondict['ang_gt_recon'], mondict['ang_imu'], mondict['ang_imu_recon'], mondict['v_loc_wheel'], mondict['v_loc_gt'], mondict['v_wheel']
+
+def results_plot_ROT(path_data_save, path_results, dataset_name):
+    plt.close('all')
+    file_name = os.path.join(path_results+"/", dataset_name + "_imu.p")
+    if not os.path.exists(file_name):
+        print('No result for ' + dataset_name)
         return
 
     print("\nResults for: " + dataset_name)
 
-    Rot_imu, ang_imu, acc_imu, v_imu, p_imu, b_omega_imu, b_acc_imu, t_imu = get_imu_estimates(path_data_save,
-        dataset_name)
+    # Rot_imu, ang_imu, acc_imu, v_imu, p_imu, b_omega_imu, b_acc_imu, t_imu = get_imu_estimates(path_data_save,
+    #     dataset_name)
 
-    Rot_wheel, ang_wheel, v_wheel, p_wheel , t_wheel = get_wheel_estimates(path_data_save,dataset_name)
+    # Rot_wheel, ang_wheel, v_wheel, p_wheel , t_wheel = get_wheel_estimates(path_data_save,dataset_name)
 
-    # Rot_ekf, ang_ekf, v_ekf, p_ekf , t_ekf, v_loc_ekf = get_ekf_estimates(path_data_save,dataset_name)
+    # Rot_joint_imu, ang_joint_imu, v_joint_imu , p_joint_imu, t_joint_imu = get_joint_imu_estimates(path_data_save,dataset_name)
 
-    Rot_joint_imu, ang_joint_imu, v_joint_imu , p_joint_imu, t_joint_imu, v_loc_joint_imu = get_joint_imu_estimates(path_data_save,dataset_name)
+    # t_gt, Rot_gt, ang_gt, p_gt, v_gt = get_gt_data(path_data_save,dataset_name)
 
-    t_gt, Rot_gt, ang_gt, p_gt, v_gt, v_loc_gt = get_gt_data(path_data_save,dataset_name)
+    # v_r_gt = np.zeros((len(v_gt),3))
+    # v_r_imu = np.zeros((len(v_imu),3))
+    # v_r_wheel = np.zeros((len(v_wheel),3))
 
-    v_r_gt = np.zeros((len(v_gt),3))
-    v_r_imu = np.zeros((len(v_imu),3))
-    v_r_wheel = np.zeros((len(v_wheel),3))
+    # for j in range(len(Rot_gt)):
+    #     v_r_gt[j] = Rot_gt[j].transpose().dot(v_gt[j])
+    # for j in range(len(Rot_imu)):
+    #     v_r_imu[j] = Rot_imu[j].transpose().dot(v_imu[j])
+    # for j in range(len(Rot_wheel)):
+    #     v_r_wheel[j] = Rot_wheel[j].transpose().dot(v_wheel[j])
 
-    for j in range(len(Rot_gt)):
-        v_r_gt[j] = Rot_gt[j].transpose().dot(v_gt[j])
-    for j in range(len(Rot_imu)):
-        v_r_imu[j] = Rot_imu[j].transpose().dot(v_imu[j])
-    for j in range(len(Rot_wheel)):
-        v_r_wheel[j] = Rot_wheel[j].transpose().dot(v_wheel[j])
+    t_gt, t_imu, t_wheel, ang_gt, ang_gt_recon, ang_imu, ang_imu_recon, v_loc_wheel, v_loc_gt, v_wheel = get_ROT_data(path_data_save,dataset_name)
 
     # plot and save plot
     folder_path = os.path.join(path_results, dataset_name)
@@ -189,16 +182,13 @@ def results_plot_test(path_data_save, path_results, dataset_name):
 
     # plt.show()
 
-    # velocity
+    # # velocity
     # fig1, ax1 = plt.subplots(sharex=True, figsize=(20, 10))
 
-    # ax1.plot(t_gt, v_loc_gt[:,:2])
-    # # ax1.plot(t_gt, v_loc_gt[:,0])
-    # # ax1.plot(t_ekf, v_ekf[:,:2])
-    # ax1.plot(t_joint_imu, v_loc_joint_imu[:,:2])
+    # ax1.plot(t_gt, v_gt[:,:2])
+    # ax1.plot(t_joint_imu, v_joint_imu[:,:2])
     # # ax1.plot(t_imu, v_imu[:,:2])
     # # ax1.plot(t_wheel, v_wheel[:,:2])
-    # # ax1.plot(t_wheel, v_wheel[:,0])
 
     # ax1.set(xlabel='time (s)', ylabel='$\mathbf{v}_n$ (m/s)', title="Velocity")
     
@@ -206,10 +196,9 @@ def results_plot_test(path_data_save, path_results, dataset_name):
 
 
     # ax1.legend(
-    #     # ['$gt^x$', '$gt^y$', '$ekf^x$', '$ekf^y$', '$wheel^x$', '$wheel^y$'])
-    #     # ['$gt^x$', '$gt^y$', '$wheel^x$', '$wheel^y$'])
-    #     # ['$gt^x$', '$wheel^x$'])
-    #     ['$mocap^x$', '$mocap^y$', '$ekf^x$', '$ekf^y$', '$wheel^x$', '$wheel^y$'])
+    #     ['$gt^x$', '$gt^y$', '$joint imu^x$', '$joint imu^y$'])
+    #     # ['$gt^x$', '$gt^y$', '$imu^x$', '$imu^y$'])
+    #     # ['$mocap^x$', '$mocap^y$', '$imu^x$', '$imu^y$', '$wheel^x$', '$wheel^y$'])
 
 
     # # position, velocity and velocity in body frame
@@ -246,55 +235,62 @@ def results_plot_test(path_data_save, path_results, dataset_name):
     #     # ['$mocap^x$', '$mocap^y$', '$mocap^z$', '$imu^x$', '$imu^y$', '$imu^z$', '$wheel^x$', '$wheel^y$', '$wheel^z$'])
     #     # ['$p_n^x$', '$p_n^y$', '$p_n^z$', '$\hat{p}_n^x$', '$\hat{p}_n^y$', '$\hat{p}_n^z$'])
 
+    # local velocity
+    fig1, ax1 = plt.subplots(sharex=True, figsize=(20,10))
 
-    # orientation, bias gyro and bias accelerometer
-    fig2, ax2 = plt.subplots(sharex=True, figsize=(20, 10))
+    ax1.plot(t_gt, v_loc_gt[:,0])
+    ax1.plot(t_imu, v_loc_wheel)
+    # ax1.plot(t_wheel, v_wheel)
+    ax1.grid()
+    ax1.legend([r'gt_v_x', r'wheel_v_x'])
+    # ax1.legend([r'gt_v_x', r'wheel_v_x', r'wheel'])
+
+    # # orientation
+    # fig2, ax2 = plt.subplots(sharex=True, figsize=(20, 10))
     
-    pi_up = np.zeros(len(t_imu))
-    pi_down = np.zeros(len(t_imu))
-    for j in range(len(t_imu)):
-        pi_up[j] = 3.141592
-        pi_down[j] = -3.141592
+    # pi_up = np.zeros(len(t_gt))
+    # pi_down = np.zeros(len(t_gt))
+    # for j in range(len(ang_gt)):
+    #     pi_up[j] = 3.141592
+    #     pi_down[j] = -3.141592
 
+    # # ax2.plot(t_gt, ang_gt[:,2])
+    # # ax2.plot(t_imu, ang_imu[:,2])
+    # ax2.plot(t_gt, ang_gt[:,0])
+    # ax2.plot(t_gt, ang_gt[:,1])
+    # ax2.plot(t_gt, ang_gt[:,2])
+    # # ax2.plot(t_gt, ang_gt_recon[:,2])
+    # # ax2.plot(t_imu, ang_imu[:,2])
+    # ax2.plot(t_imu, ang_imu_recon[:,0])
+    # ax2.plot(t_imu, ang_imu_recon[:,1])
+    # ax2.plot(t_imu, ang_imu_recon[:,2])
+    # # ax2.plot(t_wheel, ang_wheel[:,2])
+    # ax2.plot(t_gt, pi_up, 'k',linestyle='--')
+    # ax2.plot(t_gt, pi_down, 'k',linestyle='--')
 
-    ax2.plot(t_gt, ang_gt[:,2])
-    # ax2.plot(t_joint_imu, ang_joint_imu[:,2])
-    # ax2.plot(t_wheel, ang_wheel[:,2])
-    ax2.plot(t_imu, ang_imu[:,2])
-    # ax2.plot(t_ekf, ang_ekf[:,2])
-    ax2.plot(t_imu, pi_up, 'k',linestyle='--')
-    ax2.plot(t_imu, pi_down, 'k',linestyle='--')
+    # ax2.set(xlabel='time (s)', ylabel=r'$\phi_n, \theta_n, \psi_n$ (rad)',
+    #             title="Orientation")
 
-    ax2.set(xlabel='time (s)', ylabel=r'$\phi_n, \theta_n, \psi_n$ (rad)',
-                title="Orientation")
+    # ax2.grid()
 
-    ax2.grid()
-
-    # ax2.legend([r'gt', r'wheel'])
-    # ax2.legend([r'joint_imu', r'ekf'])
-    ax2.legend([r'gt',r'joint_imu', r'ekf'])
-    # ax2.legend(['gt', 'ekf'])
-    # ax2.legend([r'gt', r'imu', r'wheel'])
+    # ax2.legend([r'gt_r', r'gt_p', r'gt_y', r'recon_r', r'recon_p', r'recon_y'])
 
 
 
     # # position in plan
-    # fig3, ax3 = plt.subplots(sharex=True, figsize=(20, 10))
+    # fig3, ax3 = plt.subplots(figsize=(20, 10))
 
     # ax3.plot(p_gt[:, 0], p_gt[:, 1])
     # ax3.plot(p_joint_imu[:, 0], p_joint_imu[:, 1])
     # # ax3.plot(p_imu[:, 0], p_imu[:, 1])
     # # ax3.plot(p_wheel[:, 0], p_wheel[:, 1])
-    # # ax3.plot(p_ekf[:, 0], p_ekf[:, 1])
+    # ax3.axis('equal')
 
     # ax3.set(xlabel=r'$p_n^x$ (m)', ylabel=r'$p_n^y$ (m)', title="Position on $xy$")
-    # ax3.axis('equal')
 
     # ax3.grid()
 
-    # # ax3.legend(['gt', 'joint_imu', 'ekf'])
-    # ax3.legend([r'gt',r'joint_imu', r'ekf'])
-    # # ax3.legend(['gt', 'ekf'])
+    # ax3.legend(['gt', 'joint_imu'])
     # # ax3.legend(['gt', 'wheel'])
     # # ax3.legend(['gt', 'imu', 'wheel'])
     # # ax3.legend(['gt'])
