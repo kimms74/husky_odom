@@ -745,7 +745,7 @@ class HuskyLSTMArgs():
     # model_path = "../results/checkpoints/checkpoint_husky_lstm_1758.pt" #only dp 600 + origin: 2000 n:4  lr rate 15
     # model_path = "../results/checkpoints/checkpoint_husky_lstm_849.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 2000
     model_path = "../results/checkpoints/checkpoint_husky_lstm_835.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 1500
-    model_path = "../results/checkpoints/checkpoint_husky_lstm_935.pt" #only dRot 600 + origin: 2000 n:4  loss:4.34
+    model_path = "../results/checkpoints/checkpoint_husky_lstm_957.pt" #only dRot 600 + origin: 2000 n:4  loss:4.34
     # model_path = "../results/checkpoints/checkpoint_husky_lstm_1943.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 1000
     # model_path = "../results/checkpoints/checkpoint_husky_lstm_1299.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 500
     # model_path = "../results/checkpoints/checkpoint_husky_lstm_330.pt" #only dRot 600 n:5 2000 
