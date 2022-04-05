@@ -81,17 +81,17 @@ class TripleLoss(torch.nn.Module):
         targ_dp = bmv(targ_Rot, targ_loc_v*self.dt)
         # targ_p = torch.cumsum(targ_dp[:,:2],0)
         # pos_loss = torch.sum(self.huber_loss(pred_p[:,:2],targ_p[:,:2]))
-        # pos_loss = torch.sum(self.huber_loss(pred_dp[:,:2],targ_dp[:,:2]))*10000
+        # pos_loss = torch.sum(self.huber_loss(pred_dp[:,:2],targ_dp[:,:2]))*1500
         pos_loss = 0
-        pos_N = 4
+        pos_N = 3
         for k in range(pos_N):
             pred_dp = pred_dp[::2] + pred_dp[1::2]
             targ_dp = targ_dp[::2] + targ_dp[1::2]
 
-            pos_loss += torch.sum(self.huber_loss(pred_dp[:,:2],targ_dp[:,:2]))*10000
+            pos_loss += torch.sum(self.huber_loss(pred_dp[:,:2],targ_dp[:,:2]))*1500
 
         # 2.rot loss
-        # pred_dRot = SO3.exp(self.dt*pred_w).double()
+        pred_dRot = SO3.exp(self.dt*pred_w).double()
         # pred_Rot = torch.zeros_like(pred_dRot).double().to(device).double()
         # pred_Rot[0] = pred_dRot[0]
         # for i in range(1,pred_Rot.size(0)):
@@ -100,18 +100,18 @@ class TripleLoss(torch.nn.Module):
 
         # error_theta = SO3.log(bmtm(pred_Rot,targ_Rot))
 
-        # theta_loss = 0
-        # min_N = 5
-        # for k in range(min_N):
-        #     pred_dRot = pred_dRot[::2].bmm(pred_dRot[1::2])
-        #     targ_dRot = targ_dRot[::2].bmm(targ_dRot[1::2])
+        theta_loss = 0
+        min_N = 5
+        for k in range(min_N):
+            pred_dRot = pred_dRot[::2].bmm(pred_dRot[1::2])
+            targ_dRot = targ_dRot[::2].bmm(targ_dRot[1::2])
 
-        #     error_theta = SO3.log(SO3.dnormalize(bmtm(pred_dRot,targ_dRot)))
-        #     # error_theta = SO3.log(bmtm(pred_dRot,targ_dRot))
-        #     zero_theta = torch.zeros_like(error_theta).double().to(device)
+            error_theta = SO3.log(SO3.dnormalize(bmtm(pred_dRot,targ_dRot)))
+            # error_theta = SO3.log(bmtm(pred_dRot,targ_dRot))
+            zero_theta = torch.zeros_like(error_theta).double().to(device)
 
-        #     # theta_loss += torch.sum(self.mse_loss(error_theta, zero_theta))
-        #     theta_loss += torch.sum(self.huber_loss(error_theta, zero_theta))*4100
+            # theta_loss += torch.sum(self.mse_loss(error_theta, zero_theta))
+            theta_loss += torch.sum(self.huber_loss(error_theta, zero_theta))*3000
 
         # min_N = 2
         # for k in range(min_N):
@@ -194,10 +194,10 @@ class TripleLoss(torch.nn.Module):
 
         # loss = loc_vel_loss + theta_loss
         # loss = loc_vel_loss + pos_loss
-        loss = pos_loss
+        # loss = pos_loss
         # loss = loc_vel_loss
         # loss = theta_loss
-        # loss = pos_loss + theta_loss
+        loss = pos_loss + theta_loss
         # loss = loc_vel_loss + theta_loss + pos_loss
         # loss = loc_vel_loss + theta_loss_r + theta_loss_p + theta_loss_y
         # print('vel loss: ',loc_vel_loss)
@@ -308,7 +308,7 @@ def train(args):
     criterion = get_loss_function(args)
 
     optimizer = torch.optim.Adam(network.parameters(), args.lr)
-    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=50, factor=0.75, verbose=True, eps=1e-12)
+    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=50, factor=0.75, verbose=True, eps=1e-16)
     quiet_mode = args.quiet
     use_scheduler = args.use_scheduler
 
@@ -679,24 +679,28 @@ class HuskyLSTMArgs():
     feature_sigma = 0.001
     target_sigma = 0.0
 
-    window_size = 600 #일단 600일때 성능이 좋았음!!!!!!!!!!!!!!!!!!!!!!!!!!
+    window_size = 800
+    # window_size = 600 #일단 600일때 성능이 좋았음!!!!!!!!!!!!!!!!!!!!!!!!!!
     # window_size = 400
-    # window_size = 300
-    # window_size = 240
-    # window_size = 208
+    # # window_size = 300
     # window_size = 200
     # window_size = 100
 
-    step_size = 150
+    step_size = 600
+    # step_size = 400
+    # step_size = 200
+    # step_size = 150
     # step_size = 100
+    # step_size = 80
     # step_size = 75
-    # step_size = 60
-    # step_size = 52
     # step_size = 50
     # step_size = 25
 
-    batch_size = 72
-    # batch_size = 36
+    # batch_size = 256
+    # batch_size = 128
+    # batch_size = 64
+    # batch_size = 32
+    batch_size = 16
     num_workers = 1
     mode ='test' # choices=['train', 'test'])
     device = 'cuda:0'
@@ -706,57 +710,105 @@ class HuskyLSTMArgs():
 
     # training, cross-validation and test dataset
     # train_list = ['move1', 'move2', 'move3', 'move4', 'move5', 'move6', 'move7', 'move8', 'move9', 'origin1', 'origin2', 'origin3', 'origin4']
-    train_list = ['move1', 'move2', 'move3', 'move4', 'move5', 'move8', 'move10', 'move14', 'move15', 'move16', 'move17', 'move18', 'move19', 'move20', 'move21', 'origin3', 'origin4', 'origin7', 'origin8']
-    # train_list = ['move2', 'move3', 'move4', 'move5', 'move6', 'move7', 'move9', 'move11', 'move12', 'move13', 'move14', 'move15', 'move16', 'move17', 'move18', 'move21', 'origin1', 'origin2']
-    # train_list = ['move3', 'move4', 'move5', 'move6', 'move7', 'move8', 'move9', 'move10', 'move13', 'move14', 'move15', 'move16', 'move17', 'move18', 'move19', 'move20', 'move21', 'origin3', 'origin4', 'origin7', 'origin8']
-    # train_list = ['move1', 'move2', 'move3', 'move4', 'move5', 'move6', 'move7', 'move10', 'move11', 'move12', 'move13', 'move14', 'move15', 'move16', 'move17', 'move18', 'move19', 'move20', 'move21', 'origin2', 'origin3', 'origin4', 'origin7', 'origin8']
-    # train_list = ['square_cw', 'square_ccw', 'circle_cw', 'circle_ccw', 'ribbon', 'inf', 'move1', 'move2', 'move3', 'move4', 'move5', 'move6', 'move7', 'move8', 'origin1', 'origin2', 'origin3', 'origin4']
-    # val_list = ['origin1', 'move7', 'move8']
-    val_list = ['move7', 'move6', 'move11']
-    # val_list = ['random_1', 'random_2']
-    # test_list = ['origin4', 'move9']
-    # test_list = ['move12', 'move13', 'origin1', 'origin2', 'move7', 'move6', 'move11']
-    test_list = ['move12', 'move13', 'origin1', 'origin2']
-    # test_list = ['origin3']
-    # test_list = ['move6']
-
+    train_list = ['move1', 'move2', 'move3', 'move4', 'move5', 'move6', 'move7', 'move8', 'move10', 'move11', 'move12', 'move13', 'move14', 'move15', 'move16', 'move17', 'move20', 'origin4', 'origin7', 'origin8']
+    # train_list = ['move1', 'move2', 'move3', 'move4', 'move5', 'move8', 'move10', 'move14', 'move15', 'move16', 'move17', 'move18', 'move19', 'move20', 'move21', 'origin3', 'origin4', 'origin7', 'origin8']
+    val_list = ['move21', 'origin1']
+    test_list = ['move18', 'move19', 'origin2', 'origin3', 'move21', 'origin1']
+    # test_list = ['move18', 'move19', 'origin2', 'origin3']
+    
     # lstm
     layers = 3
     layer_size = 100
 
     # train
     # continue_from = "../results/checkpoints/icheckpoint_husky_lstm_599.pt"
-    # continue_from = "../results/checkpoints/checkpoint_husky_lstm_227.pt"
+    # continue_from = "../results/checkpoints/checkpoint_husky_lstm_502.pt"
     continue_from = None
     epochs = 2000
     save_interval = 200
-    lr = 0.0003
+    lr = 0.002
     quiet = False
     use_scheduler = True
     # use_scheduler = False
     force_lr = False
-    dropout = 0.1
+    dropout = 0.5
     # dropout = None
 
     # test
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_556.pt" #only dp 600 + origin: 4100 ### i can write paper!!!!!!!!!!!!!!!!!!!!!!!!!
+    model_path = "../results/checkpoints/checkpoint_husky_lstm_556.pt" #only dp 600 + origin: 4100 ### i can write paper!!!!!!!!!!!!!!!!!!!!!!!!!
     # model_path = "../results/checkpoints/checkpoint_husky_lstm_356.pt" #only dp 600 + origin: 2000 n:4
     # model_path = "../results/checkpoints/checkpoint_husky_lstm_798.pt" #only dp 600 + origin: 2000 n:4  loss:37.1
     # model_path = "../results/checkpoints/checkpoint_husky_lstm_1758.pt" #only dp 600 + origin: 2000 n:4  lr rate 15
     # model_path = "../results/checkpoints/checkpoint_husky_lstm_849.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 2000
-    model_path = "../results/checkpoints/checkpoint_husky_lstm_835.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 1500
-    model_path = "../results/checkpoints/checkpoint_husky_lstm_957.pt" #only dRot 600 + origin: 2000 n:4  loss:4.34
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_835.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 1500
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_794.pt" #only dRot 600 + origin: 1500 n:5  loss:10.3
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1362.pt" #only dRot 800 + origin: 1500 n:5  loss:16.70
     # model_path = "../results/checkpoints/checkpoint_husky_lstm_1943.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 1000
     # model_path = "../results/checkpoints/checkpoint_husky_lstm_1299.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 500
     # model_path = "../results/checkpoints/checkpoint_husky_lstm_330.pt" #only dRot 600 n:5 2000 
     # model_path = "../results/checkpoints/checkpoint_husky_lstm_237.pt" #only dRot 600 n:5 2000 loss: 30.3
     # model_path = "../results/checkpoints/checkpoint_husky_lstm_229.pt" #only dRot 400 n:4 loss:8.1
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_342.pt" #only p 600 + origin n:4    loss:362
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_412.pt" #only p 600 + origin n:3    loss:348 when reduce lerarning rate is very important!!!
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_298.pt" #only dp 600 loss:                 if too fast, then you gonna local minima!
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_376.pt" #only dp 600 loss: 30.9
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_730.pt" #only dp 600 loss: 30.5
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_303.pt" #only dp 400   loss:21.0        
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_263.pt" #only p 600 + origin n:4    loss:
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_570.pt" #only p 800 + origin n:3    loss: 79.75
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_412.pt" #only p 600 + origin n:3     when reduce lerarning rate is very important!!!
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_298.pt" #only dp 600 loss:           if too fast, then you gonna local minima!
+    
+    # to do!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1461.pt" #only dp 800 + origin: 1500 9000 n:5  0.0849, 0.0936
+    model_path = "../results/checkpoints/checkpoint_husky_lstm_1721.pt" #only dp 800 + origin: 1500 4500 n:5  0.1000, 0.1070
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1295.pt" #only dp 800 + origin: 1500 3000 n:5  0.0953, 0.0772
+    
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1301.pt" #only dp 800 + origin: 1500 4000 n:5  0.1033, 0.0882
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_728.pt" #only dp 800 + origin: 1500 3500 n:5  0.0869, 0.0872
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1452.pt" #only dp 800 + origin: 1500 2500 n:5  0.0856, 0.0940
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_781.pt" #only dp 800 + origin: 1500 2000 n:5  0.0739, 0.0719
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_922.pt" #only dp 800 + origin: 1500 1500 n:5  0.0802, 0.0870
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_872.pt" #only dp 800 + origin: 1500 1000 n:5  0.0794, 0.0838
+
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_790.pt" #only dp 800 + origin: 1500 7000 n:5  0.0937, 0.0983 epoch 786 1.265e-4
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_718.pt" #only dp 800 + origin: 1500 6500 n:5  0.0927, 0.0802 epoch 638 9.492e-5
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_803.pt" #only dp 800 + origin: 1500 6000 n:5  0.1058, 0.1073 epoch 744 5.339e-5
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_605.pt" #only dp 800 + origin: 1500 5500 n:5  0.1086, 0.1196 epoch 581 1.265e-4
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_795.pt" #only dp 800 + origin: 1500 5000 n:5  0.0820, 0.0854 epoch 758 7.119e-5
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_894.pt" #only dp 800 + origin: 1500 4500 n:5  0.0896, 0.0862 epoch 894 4.004e-5
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_853.pt" #only dp 800 + origin: 1500 3000 n:5  0.0968, 0.1080 epoch 841 3.003e-5
+    
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1025.pt" #only dp 800 + origin: 1500 2000 n:5  0.0887, 0.1099 epoch 764 9.492e-5
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_853.pt" #only dp 800 + origin: 1500 1500 n:5  0.1056, 0.1092 epoch 836 7.119e-5
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_717.pt" #only dp 800 + origin: 1500 1000 n:5  0.0970, 0.0959 epoch 841 3.003e-5
+    
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_328.pt" #only dp 800 + origin: 1500 2000 n:5  0.0887, 0.1099 
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1025.pt" #only dp 600 + origin: 1500 2000 n:5  0.0887, 0.1099 
+
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_513.pt" #only dp 800 + origin: 1500 2000 n:5  0.0786, 0.0891 lr 9.3750e-04
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_328.pt" #only dp 800 + origin: 1500 3000 n:5  0.0850, 0.0946 lr 7.5000e-03
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_249.pt" #only dp 800 + origin: 1500 1000 n:5  0.0901, 0.1057 lr 1.5000e-02
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_430.pt" #only dp 600 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_350.pt" #only dp 600 + origin: 1500 3000 n:5  0.0844, 0.1015 lr 1.5000e-02
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_355.pt" #only dp 600 + origin: 1500 1000 n:5  0.0743, 0.0821 lr 3.0000e-02
+    
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_196.pt" #only dp 800 + origin: 1500 2000 n:5  0.0795, 0.0920 lr 9.3750e-04
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_233.pt" #only dp 800 + origin: 1500 2000 n:5  0.0795, 0.0920 lr 9.3750e-04
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_430.pt" #only dp 600 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
+
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_283.pt" #only dp 800 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_438.pt" #only dp 800 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
+    model_path = "../results/checkpoints/checkpoint_husky_lstm_974.pt" #only dp 800 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_163.pt" #only dp 600 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_520.pt" #only dp 600 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
+    model_path = "../results/checkpoints/checkpoint_husky_lstm_248.pt" #only dp 600 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
+
+    model_path = "../results/checkpoints/checkpoint_husky_lstm_389.pt" #only dp 800 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03 ##i can use it!!!!!!!
+
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_740.pt" #only step 400 + origin: 1500 2000 n:5  0.1343, 0.1286  best?
+
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1821.pt" #only step 400 + origin: 1500 2000 n:5  0.1496, 0.1380
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1045.pt" #only step 400 + origin: 1500 3000 n:5 
+    model_path = "../results/checkpoints/checkpoint_husky_lstm_1236.pt" #only step 400 + origin: 1500 4500 n:5 
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1731.pt" #only step 600 + origin: 1500 4100 n:5  0.1594, 0.1640  good
+    # # model_path = "../results/checkpoints/checkpoint_husky_lstm_1448.pt" #only step 600 + origin: 1500 3000 n:5  0.1762, 0.1600
+
+    
     fast_test = False
     show_plot = True
 
