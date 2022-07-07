@@ -5,7 +5,7 @@ import time
 from os import path as osp
 from pathlib import Path
 from shutil import copyfile
-
+import csv
 import numpy as np
 import torch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -111,7 +111,7 @@ class TripleLoss(torch.nn.Module):
             zero_theta = torch.zeros_like(error_theta).double().to(device)
 
             # theta_loss += torch.sum(self.mse_loss(error_theta, zero_theta))
-            theta_loss += torch.sum(self.huber_loss(error_theta, zero_theta))*3000
+            theta_loss += torch.sum(self.huber_loss(error_theta, zero_theta))*2000
 
         # min_N = 2
         # for k in range(min_N):
@@ -275,18 +275,18 @@ def train(args):
     start_t = time.time()
     train_dataset = get_dataset(args.path_data_base, args.path_data_save, args.train_list, args.mode, args)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
-                              drop_last=True)
+                              drop_last=True, num_workers = args.num_workers, pin_memory = True)
     end_t = time.time()
 
     print('Training set loaded. Time usage: {:.3f}s'.format(end_t - start_t))
     val_dataset, val_loader = None, None
     if args.val_list is not None:
         val_dataset = get_dataset(args.path_data_base, args.path_data_save, args.val_list, 'val', args)
-        val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
+        val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers = args.num_workers, pin_memory = True)
         print('Validation set loaded')
 
-    # global device
-    device = torch.device('cuda:0' if torch.cuda.is_available() and not args.cpu else 'cpu')
+    global device
+    # device = torch.device('cuda:0' if torch.cuda.is_available() and not args.cpu else 'cpu')
 
     if args.path_results:
         if not osp.isdir(args.path_results):
@@ -308,7 +308,7 @@ def train(args):
     criterion = get_loss_function(args)
 
     optimizer = torch.optim.Adam(network.parameters(), args.lr)
-    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=50, factor=0.75, verbose=True, eps=1e-16)
+    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=50, factor=0.75, verbose=True, eps=2e-5)
     quiet_mode = args.quiet
     use_scheduler = args.use_scheduler
 
@@ -443,7 +443,7 @@ def recon_traj_with_preds_global(dataset, preds, targs, seq_id, type, args):
         pos = torch.cumsum(pred_dp[:,:2],0)
         veloc = targs[:,:2]
 
-        t = dataset.gt_t[seq_id]
+        t = dataset.gt_t[seq_id].unsqueeze(dim=-1)
 
 
     elif type == 'pred':
@@ -465,13 +465,13 @@ def recon_traj_with_preds_global(dataset, preds, targs, seq_id, type, args):
         pred_dp = bmv(ori,pred_loc_v*dt)
         pos = torch.cumsum(pred_dp[:,:2],0)
         veloc = preds[:,:2]
-        t = dataset.gt_t[seq_id]
+        t = dataset.gt_t[seq_id].unsqueeze(dim=-1)
 
     elif type == 'ekf':
         pos = dataset.ekf_pos[seq_id][:, :2]
         rpy = dataset.ekf_rpy[seq_id]
         veloc = dataset.ekf_v_loc[seq_id]
-        t = dataset.ekf_t[seq_id]
+        t = dataset.ekf_t[seq_id].unsqueeze(dim=-1)
         # w = torch.zeros_like(preds[:,2:5]).float().to(device)
         w = dataset.imu_w[seq_id]
     
@@ -481,8 +481,6 @@ def recon_traj_with_preds_global(dataset, preds, targs, seq_id, type, args):
 def test(args):
     global device, _output_channel
     import matplotlib.pyplot as plt
-
-    device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
 
     # Load the first sequence to update the input and output size
     _ = get_dataset(args.path_data_base, args.path_data_save, [args.test_list[0]], args.mode, args)
@@ -530,99 +528,100 @@ def test(args):
         pos_pred, rpy_pred, vel_loc_pred, t_pred, w_pred = recon_traj_with_preds_global(seq_dataset, preds, targs, idx, 'pred', args)
         pos_gt, rpy_gt, vel_loc_gt, t_gt, w_gt = recon_traj_with_preds_global(seq_dataset, preds, targs, idx, 'gt', args)
         pos_ekf, rpy_ekf, vel_loc_ekf, t_ekf, w_ekf = recon_traj_with_preds_global(seq_dataset, preds, targs, idx, 'ekf', args)
-
+        
         if args.path_results is not None and osp.isdir(args.path_results):
             np.save(osp.join(args.path_results, '{}_{}.npy'.format(data, args.type)),
                     np.concatenate([pos_pred, pos_gt], axis=1))
-
+        
         ate_pred = compute_absolute_trajectory_error(pos_pred, pos_gt)
         ate_ekf = compute_absolute_trajectory_error(pos_ekf, pos_gt)
         if pos_pred.shape[0] < pred_per_min:
             ratio = pred_per_min / pos_pred.shape[0]
-            rte_pred = compute_relative_trajectory_error(pos_pred, pos_gt, delta=pos_pred.shape[0] - 1) * ratio
-            rte_ekf = compute_relative_trajectory_error(pos_ekf, pos_gt, delta=pos_ekf.shape[0] - 1) * ratio
+            rte_pred_mean, rte_pred = compute_relative_trajectory_error(pos_pred, pos_gt, delta=pos_pred.shape[0] - 1) * ratio
+            rte_ekf_mean, rte_ekf = compute_relative_trajectory_error(pos_ekf, pos_gt, delta=pos_ekf.shape[0] - 1) * ratio
         else:
-            rte_pred = compute_relative_trajectory_error(pos_pred, pos_gt, delta=pred_per_min)
-            rte_ekf = compute_relative_trajectory_error(pos_ekf, pos_gt, delta=pred_per_min)
+            rte_pred_mean, rte_pred = compute_relative_trajectory_error(pos_pred, pos_gt, delta=pred_per_min)
+            rte_ekf_mean, rte_ekf = compute_relative_trajectory_error(pos_ekf, pos_gt, delta=pred_per_min)
         pos_cum_error = np.linalg.norm(pos_pred - pos_gt, axis=1)
 
         ate_all_pred.append(ate_pred)
-        rte_all_pred.append(rte_pred)
+        rte_all_pred.append(rte_pred_mean)
         ate_all_ekf.append(ate_ekf)
-        rte_all_ekf.append(rte_ekf)
+        rte_all_ekf.append(rte_ekf_mean)
 
         # print('Sequence {}, Velocity loss {} / {}, ATE: {}, RTE:{}'.format(data, vel_losses, np.mean(vel_losses), ate,
         #                                                                    rte))
         # log_line = format_string(data, np.mean(vel_losses), ate, rte)
 
-        print('Sequence {}, ATE_pred: {}, RTE_pred:{}'.format(data, ate_pred, rte_pred))
-        print('Sequence {}, ATE_ekf: {}, RTE_ekf:{}'.format(data, ate_ekf, rte_ekf))
-        log_line = format_string(data, ate_pred, rte_pred)
+        print('Sequence {}, ATE_pred: {}, RTE_pred:{}'.format(data, ate_pred, rte_pred_mean))
+        print('Sequence {}, ATE_ekf: {}, RTE_ekf:{}'.format(data, ate_ekf, rte_ekf_mean))
+        log_line = format_string(data, ate_pred, rte_pred_mean)
+
+        output_pred = np.concatenate((pos_pred,rpy_pred,t_pred),1)
+        output_gt = np.concatenate((pos_gt,rpy_gt,t_gt),1)
+        output_ekf = np.concatenate((pos_ekf,rpy_ekf,t_ekf),1)
+
+        with open("../outputs/"+data+"_pred.csv",'w') as file1:
+            wrt1 = csv.writer(file1)
+            wrt1.writerows(output_pred)
+        with open("../outputs/"+data+"_gt.csv",'w') as file2:
+            wrt2 = csv.writer(file2)
+            wrt2.writerows(output_gt)
+        with open("../outputs/"+data+"_ekf.csv",'w') as file3:
+            wrt3 = csv.writer(file3)
+            wrt3.writerows(output_ekf)
+
 
         if not args.fast_test:
-            kp = preds.shape[1]
-            if kp == 2:
-                targ_names = ['vx', 'vy']
-            elif kp == 3:
-                targ_names = ['vx', 'vy', 'vz']
+            plt.rc('font',size=20)
 
-            # plt.figure('{}'.format(data), figsize=(16, 9))
-            # plt.subplot2grid((kp, 2), (0, 0), rowspan=kp - 1)
-            # plt.plot(pos_gt[:, 0], pos_gt[:, 1])
-            # plt.plot(pos_pred[:, 0], pos_pred[:, 1])
-            # plt.title(data)
-            # plt.legend(['Ground truth', 'Predicted'])
-            # plt.subplot2grid((kp, 2), (kp - 1, 0))
-            # plt.plot(pos_cum_error)
-            # plt.legend(['ATE:{:.3f}, RTE:{:.3f}'.format(ate_all[-1], rte_all[-1])])
-            # for i in range(kp):
-            #     plt.subplot2grid((kp, 2), (i, 1))
-            #     plt.plot(ind, vel[:, i])
-            #     plt.plot(ind, preds[:, i])
-            #     plt.legend(['Ground truth', 'Predicted'])
-            #     plt.title('{}, error: {:.6f}'.format(targ_names[i], vel_losses[i]))
-            # plt.tight_layout()
-
-            # fig3, ax3 = plt.subplots(figsize=(20, 10))
-            # ax3.plot(pos_gt[:, 0], pos_gt[:, 1])
-            # ax3.plot(pos_pred[:, 0], pos_pred[:, 1])
-            # ax3.plot(pos_ekf[:,0], pos_ekf[:,1])
+            # fig3, ax3 = plt.subplots(figsize=(10, 10))
+            # ax3.plot(pos_gt[:, 0], pos_gt[:, 1],'k')
+            # ax3.plot(pos_pred[:, 0], pos_pred[:, 1],'orange')
+            # ax3.plot(pos_ekf[:,0], pos_ekf[:,1],'g')
 
             # ax3.set(xlabel=r'$p_n^x$ (m)', ylabel=r'$p_n^y$ (m)', title="Position of husky")
             # ax3.axis('equal')
 
             # ax3.grid()
+            # ax3.legend(['G.T.', 'Learning', 'EKF'])
 
-            # ax3.legend(['gt', 'Predicted', 'ekf'])
+            # fig4, ax4 = plt.subplots(figsize=(10, 10))
+            # # ax4.plot(t_gt, rpy_gt[:, 0])
+            # # ax4.plot(t_pred, rpy_pred[:, 0])
+            # # ax4.plot(t_gt, rpy_gt[:, 1])
+            # # ax4.plot(t_pred, rpy_pred[:, 1])            
+            # ax4.plot(t_gt, rpy_gt[:, 2],'k')
+            # ax4.plot(t_pred, rpy_pred[:, 2],'orange')
+            # ax4.plot(t_ekf, rpy_ekf[:, 2],'g')
+            # ax4.set(xlabel=r'time (sec)', ylabel=r'yaw (rad)', title="orientation of husky")
 
-            fig4, ax4 = plt.subplots(figsize=(20, 10))
-            # ax4.plot(t_gt, rpy_gt[:, 0])
-            # ax4.plot(t_pred, rpy_pred[:, 0])
-            # ax4.plot(t_gt, rpy_gt[:, 1])
-            # ax4.plot(t_pred, rpy_pred[:, 1])            
-            ax4.plot(t_gt, rpy_gt[:, 2])
-            ax4.plot(t_pred, rpy_pred[:, 2])
-            ax4.plot(t_ekf, rpy_ekf[:, 2])
-            ax4.set(xlabel=r'time (sec)', ylabel=r'$yaw (rad)', title="orientation of husky")
+            # ax4.grid()
 
-            ax4.grid()
+            # ax4.legend(['GT', 'Proposed','EKF'])
 
-            # ax4.legend(['gt_r', 'Predicted_r','gt_p', 'Predicted_p','gt_y', 'Predicted_y'])
-            ax4.legend(['gt_yaw', 'Predicted_yaw','ekf_yaw'])
+            # fig5, ax5 = plt.subplots(figsize=(30, 7))
+            fig5, ax5 = plt.subplots(figsize=(10, 10))
+            # ax5.plot(t_gt, vel_loc_gt[:, 0],'k', linewidth='2')
+            # ax5.plot(t_pred, vel_loc_pred[:, 0],'orange', linewidth='2')
+            # ax5.plot(t_ekf, vel_loc_ekf[:, 0],'g', linewidth='2')
+            ax5.plot(t_gt, vel_loc_gt[:, 1],'k', linewidth='2')
+            ax5.plot(t_pred, vel_loc_pred[:, 1],color='orange', linewidth='2')
+            ax5.plot(t_ekf, vel_loc_ekf[:, 1],'g', linewidth='2')
+            # ax5.plot(t_gt, vel_loc_gt[:, 1],'k--')
+            # ax5.plot(t_pred, vel_loc_pred[:, 1],'--',color='orange')
+            # ax5.plot(t_ekf, vel_loc_ekf[:, 1],'g--')
 
-            # fig5, ax5 = plt.subplots(figsize=(20, 10))
-            # ax5.plot(t_gt, vel_loc_gt[:, :2])
-            # ax5.plot(t_pred, vel_loc_pred[:, :2])
-            # ax5.plot(t_ekf, vel_loc_ekf[:, :2])
+            ax5.set(xlabel=r'time (sec)', ylabel=r'local velocity (m/s)', title="x velocity of husky")
 
-            # ax5.set(xlabel=r'time (sec)', ylabel=r'local velocity (m/s)', title="velocity of husky")
+            ax5.grid()
 
-            # ax5.grid()
-
-            # ax5.legend(['gt_x', 'gt_y', 'Predicted_x', 'Predicted_y','ekf_x','ekf_y'])
+            ax5.legend(['GT y', 'Proposed y','EKF y'])
+            # ax5.legend(['GT x', 'Proposed x','EKF x', 'GT y', 'Proposed y','EKF y'])
+            # ax5.legend(['GT x', 'Proposed x','EKF x', 'GT y', 'Proposed y','EKF y'],loc='lower left',bbox_to_anchor=(1,0.5))
 
 
-            # fig6, ax6 = plt.subplots(figsize=(20,10))
+            # fig6, ax6 = plt.subplots(figsize=(10,10))
             # # ax6.plot(t_gt, w_gt[:,0])
             # # ax6.plot(t_gt, w_gt[:,1])
             # ax6.plot(t_gt, w_gt[:,2])
@@ -635,8 +634,15 @@ def test(args):
 
             # ax6.grid()
 
-            # ax6.legend(['gt_x', 'gt_y', 'gt_z', 'Predicted_x', 'Predicted_y', 'Predicted_z'])
+            # # ax6.legend(['gt_x', 'gt_y', 'gt_z', 'Predicted_x', 'Predicted_y', 'Predicted_z'])
             # ax6.legend(['gt_z', 'Predicted_z', 'ekf_z'])
+
+            # fig7, ax7 = plt.subplots(figsize=(10,10))
+            # ax7.plot(rte_pred)
+            # ax7.plot(rte_ekf)
+            # ax7.set(ylabel=r'error(m)',title='relative trajectory error')
+            # ax7.grid()
+            # ax7.legend(['Learning','EKF'])
 
             if args.show_plot:
                 plt.show()
@@ -686,8 +692,9 @@ class HuskyLSTMArgs():
     # window_size = 200
     # window_size = 100
 
-    step_size = 600
+    # step_size = 600
     # step_size = 400
+    step_size = 400
     # step_size = 200
     # step_size = 150
     # step_size = 100
@@ -698,27 +705,26 @@ class HuskyLSTMArgs():
 
     # batch_size = 256
     # batch_size = 128
-    # batch_size = 64
+    batch_size = 64
     # batch_size = 32
-    batch_size = 16
+    # batch_size = 16
     num_workers = 1
     mode ='test' # choices=['train', 'test'])
-    device = 'cuda:0'
+    # device = 'cuda:0'
     read_from_data = True
     cpu = False
     sensor_frequency = 100
+    random_seed = 90
 
     # training, cross-validation and test dataset
-    # train_list = ['move1', 'move2', 'move3', 'move4', 'move5', 'move6', 'move7', 'move8', 'move9', 'origin1', 'origin2', 'origin3', 'origin4']
-    train_list = ['move1', 'move2', 'move3', 'move4', 'move5', 'move6', 'move7', 'move8', 'move10', 'move11', 'move12', 'move13', 'move14', 'move15', 'move16', 'move17', 'move20', 'origin4', 'origin7', 'origin8']
-    # train_list = ['move1', 'move2', 'move3', 'move4', 'move5', 'move8', 'move10', 'move14', 'move15', 'move16', 'move17', 'move18', 'move19', 'move20', 'move21', 'origin3', 'origin4', 'origin7', 'origin8']
-    val_list = ['move21', 'origin1']
-    test_list = ['move18', 'move19', 'origin2', 'origin3', 'move21', 'origin1']
-    # test_list = ['move18', 'move19', 'origin2', 'origin3']
+    train_list = ['move1', 'move2', 'move4', 'move5', 'move6', 'move7', 'move8', 'move9', 'move10', 'move11', 'move12', 'move13', 'move15', 'move17', 'move20', 'move21', 'origin2', 'origin4', 'origin7', 'origin8']
+    val_list = ['move14', 'move18', 'origin3']
+    test_list = ['move3', 'move16', 'move19', 'origin1', 'move14', 'move18', 'origin3']
+    # test_list = ['move1', 'move2', 'move4', 'move5', 'move6', 'move7', 'move8', 'move9', 'move10', 'move11', 'move12', 'move13', 'move15', 'move17', 'move20', 'move21', 'origin2', 'origin4', 'origin7', 'origin8']
     
     # lstm
     layers = 3
-    layer_size = 100
+    layer_size = 120
 
     # train
     # continue_from = "../results/checkpoints/icheckpoint_husky_lstm_599.pt"
@@ -726,89 +732,21 @@ class HuskyLSTMArgs():
     continue_from = None
     epochs = 2000
     save_interval = 200
-    lr = 0.002
+    lr = 0.02
     quiet = False
     use_scheduler = True
     # use_scheduler = False
     force_lr = False
-    dropout = 0.5
-    # dropout = None
+    # dropout = 0.5
+    dropout = None
 
     # test
-    model_path = "../results/checkpoints/checkpoint_husky_lstm_556.pt" #only dp 600 + origin: 4100 ### i can write paper!!!!!!!!!!!!!!!!!!!!!!!!!
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_356.pt" #only dp 600 + origin: 2000 n:4
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_798.pt" #only dp 600 + origin: 2000 n:4  loss:37.1
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1758.pt" #only dp 600 + origin: 2000 n:4  lr rate 15
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_849.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 2000
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_835.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 1500
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_794.pt" #only dRot 600 + origin: 1500 n:5  loss:10.3
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1362.pt" #only dRot 800 + origin: 1500 n:5  loss:16.70
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1943.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 1000
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1299.pt" #only dp 600 + origin: 2000 n:4  lr rate 50 1500 500
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_330.pt" #only dRot 600 n:5 2000 
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_237.pt" #only dRot 600 n:5 2000 loss: 30.3
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_229.pt" #only dRot 400 n:4 loss:8.1
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_263.pt" #only p 600 + origin n:4    loss:
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_570.pt" #only p 800 + origin n:3    loss: 79.75
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_412.pt" #only p 600 + origin n:3     when reduce lerarning rate is very important!!!
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_298.pt" #only dp 600 loss:           if too fast, then you gonna local minima!
-    
-    # to do!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1461.pt" #only dp 800 + origin: 1500 9000 n:5  0.0849, 0.0936
-    model_path = "../results/checkpoints/checkpoint_husky_lstm_1721.pt" #only dp 800 + origin: 1500 4500 n:5  0.1000, 0.1070
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1295.pt" #only dp 800 + origin: 1500 3000 n:5  0.0953, 0.0772
-    
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1301.pt" #only dp 800 + origin: 1500 4000 n:5  0.1033, 0.0882
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_728.pt" #only dp 800 + origin: 1500 3500 n:5  0.0869, 0.0872
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1452.pt" #only dp 800 + origin: 1500 2500 n:5  0.0856, 0.0940
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_781.pt" #only dp 800 + origin: 1500 2000 n:5  0.0739, 0.0719
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_922.pt" #only dp 800 + origin: 1500 1500 n:5  0.0802, 0.0870
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_872.pt" #only dp 800 + origin: 1500 1000 n:5  0.0794, 0.0838
+    ##layer 120
+    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1766.pt" #90 move + origin batch 64 no dropout, 0.02 0.1283 0.0968 'move3', 'move18', 'origin1'
+    model_path = "../results/checkpoints/checkpoint_husky_lstm_1260.pt" #90 move + origin batch 64 no dropout, 0.02 0.1240 0.0927 'move3', 'move18', 'origin1' ultra best!!!
 
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_790.pt" #only dp 800 + origin: 1500 7000 n:5  0.0937, 0.0983 epoch 786 1.265e-4
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_718.pt" #only dp 800 + origin: 1500 6500 n:5  0.0927, 0.0802 epoch 638 9.492e-5
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_803.pt" #only dp 800 + origin: 1500 6000 n:5  0.1058, 0.1073 epoch 744 5.339e-5
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_605.pt" #only dp 800 + origin: 1500 5500 n:5  0.1086, 0.1196 epoch 581 1.265e-4
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_795.pt" #only dp 800 + origin: 1500 5000 n:5  0.0820, 0.0854 epoch 758 7.119e-5
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_894.pt" #only dp 800 + origin: 1500 4500 n:5  0.0896, 0.0862 epoch 894 4.004e-5
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_853.pt" #only dp 800 + origin: 1500 3000 n:5  0.0968, 0.1080 epoch 841 3.003e-5
-    
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1025.pt" #only dp 800 + origin: 1500 2000 n:5  0.0887, 0.1099 epoch 764 9.492e-5
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_853.pt" #only dp 800 + origin: 1500 1500 n:5  0.1056, 0.1092 epoch 836 7.119e-5
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_717.pt" #only dp 800 + origin: 1500 1000 n:5  0.0970, 0.0959 epoch 841 3.003e-5
-    
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_328.pt" #only dp 800 + origin: 1500 2000 n:5  0.0887, 0.1099 
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1025.pt" #only dp 600 + origin: 1500 2000 n:5  0.0887, 0.1099 
 
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_513.pt" #only dp 800 + origin: 1500 2000 n:5  0.0786, 0.0891 lr 9.3750e-04
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_328.pt" #only dp 800 + origin: 1500 3000 n:5  0.0850, 0.0946 lr 7.5000e-03
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_249.pt" #only dp 800 + origin: 1500 1000 n:5  0.0901, 0.1057 lr 1.5000e-02
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_430.pt" #only dp 600 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_350.pt" #only dp 600 + origin: 1500 3000 n:5  0.0844, 0.1015 lr 1.5000e-02
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_355.pt" #only dp 600 + origin: 1500 1000 n:5  0.0743, 0.0821 lr 3.0000e-02
-    
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_196.pt" #only dp 800 + origin: 1500 2000 n:5  0.0795, 0.0920 lr 9.3750e-04
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_233.pt" #only dp 800 + origin: 1500 2000 n:5  0.0795, 0.0920 lr 9.3750e-04
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_430.pt" #only dp 600 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
-
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_283.pt" #only dp 800 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_438.pt" #only dp 800 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
-    model_path = "../results/checkpoints/checkpoint_husky_lstm_974.pt" #only dp 800 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_163.pt" #only dp 600 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_520.pt" #only dp 600 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
-    model_path = "../results/checkpoints/checkpoint_husky_lstm_248.pt" #only dp 600 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03
-
-    model_path = "../results/checkpoints/checkpoint_husky_lstm_389.pt" #only dp 800 + origin: 1500 2000 n:5  0.1088, 0.1143 lr 7.5000e-03 ##i can use it!!!!!!!
-
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_740.pt" #only step 400 + origin: 1500 2000 n:5  0.1343, 0.1286  best?
-
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1821.pt" #only step 400 + origin: 1500 2000 n:5  0.1496, 0.1380
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1045.pt" #only step 400 + origin: 1500 3000 n:5 
-    model_path = "../results/checkpoints/checkpoint_husky_lstm_1236.pt" #only step 400 + origin: 1500 4500 n:5 
-    # model_path = "../results/checkpoints/checkpoint_husky_lstm_1731.pt" #only step 600 + origin: 1500 4100 n:5  0.1594, 0.1640  good
-    # # model_path = "../results/checkpoints/checkpoint_husky_lstm_1448.pt" #only step 600 + origin: 1500 3000 n:5  0.1762, 0.1600
-
-    
+    #window 600 step 300 
     fast_test = False
     show_plot = True
 
@@ -826,6 +764,12 @@ if __name__ == '__main__':
 
     args = HuskyLSTMArgs()
     np.set_printoptions(formatter={'all': lambda x: '{:.6f}'.format(x)})
+
+    torch.manual_seed(args.random_seed)
+    torch.cuda.manual_seed(args.random_seed)
+    torch.cuda.manual_seed_all(args.random_seed)
+    np.random.seed(args.random_seed)
+    random.seed(args.random_seed)
 
     if args.mode == 'train':
         train(args)

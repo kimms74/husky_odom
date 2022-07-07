@@ -13,11 +13,16 @@ from scipy.spatial.transform import Rotation as R
 from utils import *
 from scipy.ndimage import gaussian_filter1d
 from lie_algebra import SO3
+import csv
 
 class HuskyData:
 
     feature_dim = 7 # nonholonomic_velocity, w_imu, acc_imu (1,3,3)
     target_dim = 5 # 2d_v_loc_gt, ang_vel_gt (2,3)
+
+    global device
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
 
     def __init__(self, path_data_base, path_data_save, data_list, mode, read_from_data, dt):
         # paths
@@ -65,6 +70,8 @@ class HuskyData:
             self.aux_all.append(aux)
 
     def read_data(self):
+        
+        global device
 
         print('Start read_data')
         
@@ -165,7 +172,7 @@ class HuskyData:
                             dRot_gt = torch.zeros(len(gt_data),3,3).double()
                             dRot_gt[0] = torch.eye(3).double()
                             dRot_gt[1:] = bmtm(Rot_gt[:-1],Rot_gt[1:])
-                            dRot_gt = SO3.dnormalize(dRot_gt.cuda())
+                            dRot_gt = SO3.dnormalize(dRot_gt.to(device))
                             w_gt = (SO3.log(dRot_gt)/self.dt).double().cpu().detach()
 
                             dRot_gt = dRot_gt.reshape(dRot_gt.size(0),9,).cpu()
@@ -215,7 +222,6 @@ class HuskyData:
                             acc_imu = mbv(R_imu_from_robot,acc_imu_temp).double()
                             
                             w_imu = mbv(R_imu_from_robot,w_imu_temp).double()
-                            device = 'cuda:0'
                             dRot_imu = SO3.exp(self.dt * w_imu.to(device)).double().cpu().detach()
                             Rot_imu = torch.zeros_like(dRot_imu).double()
                             Rot_imu[0] = dRot_imu[0]
@@ -281,6 +287,11 @@ class HuskyData:
 
             aux = torch.cat((t_gt[:, None], p_gt, rpy_gt, w_gt, t_ekf[:, None], p_ekf, rpy_ekf, v_ekf, w_imu), 1)
             # aux = torch.cat((t_gt[:, None], p_gt, rpy_gt, w_gt), 1)
+
+            # t_pos_gt = torch.cat((t_gt.unsqueeze(-1),p_gt),1)
+            # with open("../gt_pos/"+dataset+"_pos.csv",'w') as file1:
+            #     wrt1 = csv.writer(file1)
+            #     wrt1.writerows(t_pos_gt.numpy())
 
             mondict = {
             't_gt': t_gt, 'p_gt': p_gt, 'Rot_gt': Rot_gt,'rpy_gt': rpy_gt, 'v_gt': v_gt, 'v_loc_gt': v_loc_gt,

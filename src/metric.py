@@ -1,5 +1,5 @@
 import numpy as np
-
+import matplotlib.pyplot as plt
 
 def compute_absolute_trajectory_error(est, gt):
     """
@@ -33,18 +33,24 @@ def compute_relative_trajectory_error(est, gt, delta, max_delta=-1):
     Returns:
         Relative trajectory error. This is the mean value under different delta.
     """
+    
     if max_delta == -1:
         max_delta = est.shape[0]
-    deltas = np.array([delta]) if delta > 0 else np.arange(1, min(est.shape[0], max_delta))
+    if delta > 0:
+        # deltas = np.array([delta])
+        deltas = np.arange(1, delta)
+    else:
+        deltas = np.arange(1, min(est.shape[0], max_delta))
+
     rtes = np.zeros(deltas.shape[0])
     for i in range(deltas.shape[0]):
         # For each delta, the RTE is computed as the RMSE of endpoint drifts from fixed windows
         # slided through the trajectory.
-        err = est[deltas[i]:] + gt[:-deltas[i]] - est[:-deltas[i]] - gt[deltas[i]:]
+        err = (est[deltas[i]:] - est[:-deltas[i]]) - (gt[deltas[i]:] - gt[:-deltas[i]])
         rtes[i] = np.sqrt(np.mean(err ** 2))
 
     # The average of RTE of all window sized is returned.
-    return np.mean(rtes)
+    return np.mean(rtes), rtes
 
 
 def compute_ate_rte(est, gt, pred_per_min=6000):
@@ -55,11 +61,11 @@ def compute_ate_rte(est, gt, pred_per_min=6000):
     ate = compute_absolute_trajectory_error(est, gt)
     if est.shape[0] < pred_per_min:
         ratio = pred_per_min / est.shape[0]
-        rte = compute_relative_trajectory_error(est, gt, delta=est.shape[0] - 1) * ratio
+        rte_mean, rte = compute_relative_trajectory_error(est, gt, delta=est.shape[0] - 1) * ratio
     else:
-        rte = compute_relative_trajectory_error(est, gt, delta=pred_per_min)
+        rte_mean, rte = compute_relative_trajectory_error(est, gt, delta=pred_per_min)
 
-    return ate, rte
+    return ate, rte_mean
 
 
 def compute_heading_error(est, gt):
